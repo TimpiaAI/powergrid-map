@@ -1241,7 +1241,7 @@ export default function MapView() {
         <Source
           id="powergrid"
           type="vector"
-          url="pmtiles:///data/powergrid.pmtiles"
+          url="pmtiles:///api/tiles"
           maxzoom={14}
         >
           {/* Lines (HV) */}
