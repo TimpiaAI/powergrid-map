@@ -10,6 +10,14 @@ import {
   Loader2,
 } from "lucide-react";
 
+interface MapCommand {
+  action: "fly_to";
+  lat: number;
+  lng: number;
+  zoom: number;
+  label?: string;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -18,6 +26,7 @@ interface ChatMessage {
 interface ChatSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
+  onFlyTo?: (lng: number, lat: number, zoom?: number) => void;
 }
 
 function generateSessionId(): string {
@@ -85,7 +94,7 @@ function renderContent(text: string): React.ReactNode {
   return <>{elements}</>;
 }
 
-export default function ChatSidebar({ isOpen, onToggle }: ChatSidebarProps) {
+export default function ChatSidebar({ isOpen, onToggle, onFlyTo }: ChatSidebarProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -154,15 +163,34 @@ export default function ChatSidebar({ isOpen, onToggle }: ChatSidebarProps) {
             const data = JSON.parse(line.slice(6));
 
             if (data.token) {
+              // Check if token contains a fly_to command JSON
+              const tokenText = data.token;
+              try {
+                // Try to detect fly_to JSON in accumulated response
+                const flyMatch = tokenText.match(/\{"action":\s*"fly_to"[^}]+\}/);
+                if (flyMatch && onFlyTo) {
+                  const cmd: MapCommand = JSON.parse(flyMatch[0]);
+                  if (cmd.action === "fly_to") {
+                    onFlyTo(cmd.lng, cmd.lat, cmd.zoom);
+                  }
+                }
+              } catch {
+                // Not a command, just regular text
+              }
+
               // Stream token into the last assistant message
               setMessages((prev) => {
                 const updated = [...prev];
                 const lastMsg = updated[updated.length - 1];
                 if (lastMsg && lastMsg.role === "assistant") {
-                  updated[updated.length - 1] = {
-                    ...lastMsg,
-                    content: lastMsg.content + data.token,
-                  };
+                  // Clean fly_to JSON from visible text
+                  const cleanToken = tokenText.replace(/\{"action":\s*"fly_to"[^}]+\}/g, "").trim();
+                  if (cleanToken) {
+                    updated[updated.length - 1] = {
+                      ...lastMsg,
+                      content: lastMsg.content + cleanToken,
+                    };
+                  }
                 }
                 return updated;
               });

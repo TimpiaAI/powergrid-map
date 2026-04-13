@@ -1030,7 +1030,13 @@ export default function MapView() {
       />
 
       {/* Chat Sidebar */}
-      <ChatSidebar isOpen={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />
+      <ChatSidebar
+        isOpen={chatOpen}
+        onToggle={() => setChatOpen(!chatOpen)}
+        onFlyTo={(lng, lat, zoom) => {
+          mapRef.current?.flyTo({ center: [lng, lat], zoom: zoom || 14, duration: 1500 });
+        }}
+      />
 
       {/* Coordinate Bar */}
       {cursorPosition && !isLoading && (
