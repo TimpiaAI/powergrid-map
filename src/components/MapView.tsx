@@ -152,33 +152,34 @@ export default function MapView() {
 
       setIsLoading(false);
 
-      // Load Europe GridKit data and merge with Romania data
-      const euFiles = [
-        { name: "gridkit_europe_lines.geojson", setter: setLinesData },
-        { name: "gridkit_europe_vertices.geojson", setter: setSubstationsData },
-        { name: "europe_lines.geojson", setter: setLinesData },
-        { name: "europe_substations.geojson", setter: setSubstationsData },
-        { name: "europe_plants.geojson", setter: setPlantsData },
-      ];
-
-      await Promise.allSettled(
-        euFiles.map(async ({ name, setter }) => {
-          try {
-            const res = await fetch(`/data/${name}`);
-            if (res.ok) {
-              const euData = await res.json();
-              if (euData.features && euData.features.length > 0) {
-                setter((prev: PowerFeatureCollection) => ({
-                  type: "FeatureCollection",
-                  features: [...prev.features, ...euData.features],
-                }));
-              }
+      // Load ALL Europe data progressively
+      const mergeFile = async (name: string, setter: React.Dispatch<React.SetStateAction<PowerFeatureCollection>>) => {
+        try {
+          const res = await fetch(`/data/${name}`);
+          if (res.ok) {
+            const d = await res.json();
+            if (d.features?.length > 0) {
+              setter((prev: PowerFeatureCollection) => ({
+                type: "FeatureCollection",
+                features: [...prev.features, ...d.features],
+              }));
             }
-          } catch {
-            // Europe data not available yet
           }
-        })
-      );
+        } catch { /* not available */ }
+      };
+
+      // Wave 1: HV lines + all substations + all plants
+      await Promise.allSettled([
+        mergeFile("europe_lines_hv.geojson", setLinesData),
+        mergeFile("europe_substations_all.geojson", setSubstationsData),
+        mergeFile("europe_plants_all.geojson", setPlantsData),
+      ]);
+
+      // Wave 2: MV lines (20-109kV)
+      await mergeFile("europe_lines_mv.geojson", setLinesData);
+
+      // Wave 3: LV lines (<20kV + unknown)
+      await mergeFile("europe_lines_lv.geojson", setLinesData);
     };
 
     loadData();
