@@ -466,10 +466,15 @@ export default function MapView() {
     () => ({
       id: "substations-label",
       type: "symbol" as const,
-      minzoom: 10,
+      minzoom: 8,
       layout: {
         "text-field": ["coalesce", ["get", "name"], ""] as any,
-        "text-size": 11,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          8, 8,
+          11, 10,
+          14, 12,
+        ] as any,
         "text-offset": [0, 1.5] as [number, number],
         "text-anchor": "top" as const,
         "text-max-width": 10,
@@ -489,22 +494,59 @@ export default function MapView() {
     () => ({
       id: "towers",
       type: "circle" as const,
-      minzoom: 8,
+      minzoom: 7,
       paint: {
         "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          8, 0.5,
-          11, 1.5,
-          15, 4,
-          18, 6,
+          "interpolate", ["linear"], ["zoom"],
+          7, 0.3,
+          10, 1,
+          13, 3,
+          16, 5,
+          18, 7,
         ] as any,
         "circle-color": "#94a3b8",
-        "circle-opacity": 0.7,
+        "circle-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          7, 0.3,
+          11, 0.6,
+          14, 0.8,
+        ] as any,
         "circle-stroke-color": "#cbd5e1",
-        "circle-stroke-width": 0.5,
+        "circle-stroke-width": [
+          "interpolate", ["linear"], ["zoom"],
+          10, 0,
+          14, 0.5,
+          17, 1,
+        ] as any,
         "circle-stroke-opacity": 0.4,
+      },
+    }),
+    []
+  );
+
+  // Tower labels (show ref tag at high zoom)
+  const towersLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "towers-label",
+      type: "symbol" as const,
+      minzoom: 14,
+      layout: {
+        "text-field": ["coalesce", ["get", "ref"], ["get", "name"], ""] as any,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          14, 8,
+          17, 11,
+        ] as any,
+        "text-offset": [0, 1.2] as [number, number],
+        "text-anchor": "top" as const,
+        "text-max-width": 8,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#94a3b8",
+        "text-halo-color": "rgba(0, 0, 0, 0.9)",
+        "text-halo-width": 1,
+        "text-opacity": 0.7,
       },
     }),
     []
@@ -554,10 +596,15 @@ export default function MapView() {
     () => ({
       id: "plants-label",
       type: "symbol" as const,
-      minzoom: 9,
+      minzoom: 7,
       layout: {
         "text-field": ["coalesce", ["get", "name"], ""] as any,
-        "text-size": 11,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          7, 8,
+          10, 10,
+          14, 12,
+        ] as any,
         "text-offset": [0, 1.5] as [number, number],
         "text-anchor": "top" as const,
         "text-max-width": 10,
@@ -565,9 +612,14 @@ export default function MapView() {
       },
       paint: {
         "text-color": "#4ade80",
-        "text-halo-color": "rgba(0, 0, 0, 0.8)",
+        "text-halo-color": "rgba(0, 0, 0, 0.9)",
         "text-halo-width": 1.5,
-        "text-opacity": 0.9,
+        "text-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          7, 0.5,
+          10, 0.8,
+          14, 1,
+        ] as any,
       },
     }),
     []
@@ -796,6 +848,7 @@ export default function MapView() {
         {/* Towers */}
         <Source id="towers" type="geojson" data={towersData}>
           {layers.towers && <Layer {...towersLayer} />}
+          {layers.towers && <Layer {...towersLabelLayer} />}
         </Source>
 
         {/* Power Plants (OSM) */}
