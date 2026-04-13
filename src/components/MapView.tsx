@@ -105,6 +105,10 @@ export default function MapView() {
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
   const [projectsData, setProjectsData] =
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
+  const [solarData, setSolarData] =
+    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
+  const [windData, setWindData] =
+    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
 
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
@@ -121,6 +125,8 @@ export default function MapView() {
         { name: "romania_towers.geojson", setter: setTowersData },
         { name: "romania_plants.geojson", setter: setPlantsData },
         { name: "romania_projects.geojson", setter: setProjectsData },
+        { name: "microsoft_solar_romania.geojson", setter: setSolarData },
+        { name: "microsoft_wind_romania.geojson", setter: setWindData },
       ];
 
       await Promise.allSettled(
@@ -311,6 +317,8 @@ export default function MapView() {
       "plants-fill": "plants",
       "plants-point": "plants",
       "projects-circle": "projects",
+      "solar-circle": "plants",
+      "wind-circle": "plants",
     };
 
     setSelectedFeature({
@@ -605,6 +613,67 @@ export default function MapView() {
     []
   );
 
+  // Microsoft satellite-detected solar parks
+  const solarCircleLayer: LayerProps = useMemo(
+    () => ({
+      id: "solar-circle",
+      type: "circle" as const,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          4, 3, 8, 5, 12, 8, 16, 14,
+        ] as any,
+        "circle-color": "#fbbf24",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#f59e0b",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.7,
+      },
+    }),
+    []
+  );
+
+  const solarLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "solar-label",
+      type: "symbol" as const,
+      minzoom: 11,
+      layout: {
+        "text-field": ["concat", ["to-string", ["round", ["get", "area_ha"]]], " ha"] as any,
+        "text-size": 10,
+        "text-offset": [0, 1.5] as [number, number],
+        "text-anchor": "top" as const,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#fbbf24",
+        "text-halo-color": "rgba(0,0,0,0.9)",
+        "text-halo-width": 1.5,
+      },
+    }),
+    []
+  );
+
+  // Microsoft satellite-detected wind turbines
+  const windCircleLayer: LayerProps = useMemo(
+    () => ({
+      id: "wind-circle",
+      type: "circle" as const,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          4, 2.5, 8, 4, 12, 7, 16, 12,
+        ] as any,
+        "circle-color": "#22d3ee",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#06b6d4",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.7,
+      },
+    }),
+    []
+  );
+
   // Projects layer — color by status
   const projectsCircleLayer: LayerProps = useMemo(
     () => ({
@@ -675,7 +744,7 @@ export default function MapView() {
       ids.push("substations-fill", "substations-outline", "substations-point");
     if (layers.towers) ids.push("towers");
     if (layers.plants) ids.push("plants-fill", "plants-point");
-    if (layers.projects) ids.push("projects-circle");
+    if (layers.projects) ids.push("projects-circle", "solar-circle", "wind-circle");
     return ids;
   }, [layers]);
 
@@ -730,6 +799,17 @@ export default function MapView() {
         <Source id="projects" type="geojson" data={projectsData}>
           {layers.projects && <Layer {...projectsCircleLayer} />}
           {layers.projects && <Layer {...projectsLabelLayer} />}
+        </Source>
+
+        {/* Microsoft satellite-detected solar parks */}
+        <Source id="solar" type="geojson" data={solarData}>
+          {layers.projects && <Layer {...solarCircleLayer} />}
+          {layers.projects && <Layer {...solarLabelLayer} />}
+        </Source>
+
+        {/* Microsoft satellite-detected wind turbines */}
+        <Source id="wind" type="geojson" data={windData}>
+          {layers.projects && <Layer {...windCircleLayer} />}
         </Source>
       </MapGL>
 
