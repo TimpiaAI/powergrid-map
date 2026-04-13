@@ -326,6 +326,8 @@ export default function MapView() {
       towers: "towers",
       "plants-fill": "plants",
       "plants-point": "plants",
+      "plants-centroid": "plants",
+      "plants-outline": "plants",
       "projects-circle": "projects",
       "solar-circle": "solarSatellite",
       "wind-circle": "windSatellite",
@@ -559,7 +561,46 @@ export default function MapView() {
       filter: ["==", ["geometry-type"], "Polygon"] as any,
       paint: {
         "fill-color": "#22c55e",
-        "fill-opacity": 0.15,
+        "fill-opacity": 0.25,
+      },
+    }),
+    []
+  );
+
+  const plantsOutlineLayer: LayerProps = useMemo(
+    () => ({
+      id: "plants-outline",
+      type: "line" as const,
+      filter: ["==", ["geometry-type"], "Polygon"] as any,
+      paint: {
+        "line-color": "#4ade80",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 2] as any,
+        "line-opacity": 0.7,
+      },
+    }),
+    []
+  );
+
+  // Show ALL plants (Point AND Polygon) as circles at low zoom
+  // This ensures polygons are visible when zoomed out (too small to see as fill)
+  const plantsCentroidLayer: LayerProps = useMemo(
+    () => ({
+      id: "plants-centroid",
+      type: "circle" as const,
+      maxzoom: 12,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          4, 3,
+          7, 5,
+          10, 7,
+          12, 9,
+        ] as any,
+        "circle-color": "#22c55e",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#4ade80",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.6,
       },
     }),
     []
@@ -570,17 +611,13 @@ export default function MapView() {
       id: "plants-point",
       type: "circle" as const,
       filter: ["==", ["geometry-type"], "Point"] as any,
+      minzoom: 12,
       paint: {
         "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          5,
-          4,
-          10,
-          8,
-          15,
-          12,
+          "interpolate", ["linear"], ["zoom"],
+          12, 6,
+          15, 10,
+          18, 14,
         ] as any,
         "circle-color": "#22c55e",
         "circle-opacity": 0.8,
@@ -803,7 +840,7 @@ export default function MapView() {
     if (layers.substations)
       ids.push("substations-fill", "substations-outline", "substations-point");
     if (layers.towers) ids.push("towers");
-    if (layers.plants) ids.push("plants-fill", "plants-point");
+    if (layers.plants) ids.push("plants-fill", "plants-point", "plants-centroid");
     if (layers.projects) ids.push("projects-circle");
     if (layers.solarSatellite) ids.push("solar-circle");
     if (layers.windSatellite) ids.push("wind-circle");
@@ -853,7 +890,9 @@ export default function MapView() {
 
         {/* Power Plants (OSM) */}
         <Source id="plants" type="geojson" data={plantsData}>
+          {layers.plants && <Layer {...plantsCentroidLayer} />}
           {layers.plants && <Layer {...plantsFillLayer} />}
+          {layers.plants && <Layer {...plantsOutlineLayer} />}
           {layers.plants && <Layer {...plantsPointLayer} />}
           {layers.plants && <Layer {...plantsLabelLayer} />}
         </Source>
