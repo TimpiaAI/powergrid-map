@@ -79,6 +79,7 @@ export default function MapView() {
     substations: true,
     towers: true,
     plants: true,
+    projects: true,
     heatmap: false,
   });
 
@@ -102,6 +103,8 @@ export default function MapView() {
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
   const [plantsData, setPlantsData] =
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
+  const [projectsData, setProjectsData] =
+    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
 
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
@@ -117,6 +120,7 @@ export default function MapView() {
         { name: "romania_substations.geojson", setter: setSubstationsData },
         { name: "romania_towers.geojson", setter: setTowersData },
         { name: "romania_plants.geojson", setter: setPlantsData },
+        { name: "romania_projects.geojson", setter: setProjectsData },
       ];
 
       await Promise.allSettled(
@@ -135,11 +139,13 @@ export default function MapView() {
 
       setIsLoading(false);
 
-      // Then try loading Europe data in background and merge
+      // Load Europe GridKit data and merge with Romania data
       const euFiles = [
-        { name: "europe_lines.geojson", setter: setLinesData, current: "lines" },
-        { name: "europe_substations.geojson", setter: setSubstationsData, current: "substations" },
-        { name: "europe_plants.geojson", setter: setPlantsData, current: "plants" },
+        { name: "gridkit_europe_lines.geojson", setter: setLinesData },
+        { name: "gridkit_europe_vertices.geojson", setter: setSubstationsData },
+        { name: "europe_lines.geojson", setter: setLinesData },
+        { name: "europe_substations.geojson", setter: setSubstationsData },
+        { name: "europe_plants.geojson", setter: setPlantsData },
       ];
 
       await Promise.allSettled(
@@ -156,7 +162,7 @@ export default function MapView() {
               }
             }
           } catch {
-            // Europe data not available yet — that's fine
+            // Europe data not available yet
           }
         })
       );
@@ -172,8 +178,9 @@ export default function MapView() {
       substations: substationsData.features.length,
       towers: towersData.features.length,
       plants: plantsData.features.length,
+      projects: projectsData.features.length,
     }),
-    [linesData, substationsData, towersData, plantsData]
+    [linesData, substationsData, towersData, plantsData, projectsData]
   );
 
   // Build voltage filter expression for MapLibre (matches both V and kV)
@@ -303,6 +310,7 @@ export default function MapView() {
       towers: "towers",
       "plants-fill": "plants",
       "plants-point": "plants",
+      "projects-circle": "projects",
     };
 
     setSelectedFeature({
@@ -597,6 +605,69 @@ export default function MapView() {
     []
   );
 
+  // Projects layer — color by status
+  const projectsCircleLayer: LayerProps = useMemo(
+    () => ({
+      id: "projects-circle",
+      type: "circle" as const,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          5, 3, 10, 6, 15, 10,
+        ] as any,
+        "circle-color": [
+          "match", ["get", "status"],
+          "operational", "#ffffff",
+          "certificat", "#22c55e",
+          "contract_activ", "#3b82f6",
+          "contract_prelungit", "#6366f1",
+          "ss_aprobat", "#8b5cf6",
+          "ss_analiza", "#a855f7",
+          "atr", "#eab308",
+          "contract_reziliat", "#ef4444",
+          "ss_expirat", "#71717a",
+          "#f59e0b",
+        ] as any,
+        "circle-opacity": 0.9,
+        "circle-stroke-color": [
+          "match", ["get", "type"],
+          "fotovoltaic", "#fbbf24",
+          "eolian", "#38bdf8",
+          "hidro", "#22d3ee",
+          "biomasa", "#4ade80",
+          "stocare", "#c084fc",
+          "#94a3b8",
+        ] as any,
+        "circle-stroke-width": 2,
+        "circle-stroke-opacity": 0.8,
+      },
+    }),
+    []
+  );
+
+  const projectsLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "projects-label",
+      type: "symbol" as const,
+      minzoom: 10,
+      layout: {
+        "text-field": ["coalesce", ["get", "name"], ""] as any,
+        "text-size": 10,
+        "text-offset": [0, 1.8] as [number, number],
+        "text-anchor": "top" as const,
+        "text-max-width": 12,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#fde68a",
+        "text-halo-color": "rgba(0, 0, 0, 0.9)",
+        "text-halo-width": 1.5,
+        "text-opacity": 0.85,
+      },
+    }),
+    []
+  );
+
   const interactiveLayerIds = useMemo(() => {
     const ids: string[] = [];
     if (layers.lines) ids.push("power-lines");
@@ -604,6 +675,7 @@ export default function MapView() {
       ids.push("substations-fill", "substations-outline", "substations-point");
     if (layers.towers) ids.push("towers");
     if (layers.plants) ids.push("plants-fill", "plants-point");
+    if (layers.projects) ids.push("projects-circle");
     return ids;
   }, [layers]);
 
@@ -647,11 +719,17 @@ export default function MapView() {
           {layers.towers && <Layer {...towersLayer} />}
         </Source>
 
-        {/* Power Plants */}
+        {/* Power Plants (OSM) */}
         <Source id="plants" type="geojson" data={plantsData}>
           {layers.plants && <Layer {...plantsFillLayer} />}
           {layers.plants && <Layer {...plantsPointLayer} />}
           {layers.plants && <Layer {...plantsLabelLayer} />}
+        </Source>
+
+        {/* Energy Projects (ATR/SS/Contracte/PIF) */}
+        <Source id="projects" type="geojson" data={projectsData}>
+          {layers.projects && <Layer {...projectsCircleLayer} />}
+          {layers.projects && <Layer {...projectsLabelLayer} />}
         </Source>
       </MapGL>
 

@@ -14,6 +14,7 @@ import {
   Columns2,
   Flame,
   Map,
+  Sun,
 } from "lucide-react";
 import {
   LayerVisibility,
@@ -38,6 +39,7 @@ const LAYER_ICONS: Record<string, React.ReactNode> = {
   substations: <Building2 className="w-4 h-4" />,
   towers: <Columns2 className="w-4 h-4" />,
   plants: <Flame className="w-4 h-4" />,
+  projects: <Sun className="w-4 h-4" />,
   heatmap: <Map className="w-4 h-4" />,
 };
 
@@ -194,6 +196,7 @@ export default function Sidebar({
               <StatCard icon={<Building2 style={{ width: 14, height: 14 }} />} label="Statii" value={stats.substations} />
               <StatCard icon={<Columns2 style={{ width: 14, height: 14 }} />} label="Stalpi" value={stats.towers} />
               <StatCard icon={<Flame style={{ width: 14, height: 14 }} />} label="Centrale" value={stats.plants} />
+              <StatCard icon={<Sun style={{ width: 14, height: 14 }} />} label="Proiecte" value={stats.projects} />
             </div>
           )}
         </div>

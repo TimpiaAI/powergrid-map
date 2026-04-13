@@ -38,6 +38,7 @@ export type LayerType =
   | "substations"
   | "towers"
   | "plants"
+  | "projects"
   | "heatmap";
 
 export interface LayerVisibility {
@@ -45,6 +46,7 @@ export interface LayerVisibility {
   substations: boolean;
   towers: boolean;
   plants: boolean;
+  projects: boolean;
   heatmap: boolean;
 }
 
@@ -53,6 +55,7 @@ export interface DataStats {
   substations: number;
   towers: number;
   plants: number;
+  projects: number;
 }
 
 export interface SelectedFeature {
@@ -85,6 +88,7 @@ export const LAYER_LABELS: Record<LayerType, string> = {
   lines: "Linii electrice",
   substations: "Statii de transformare",
   towers: "Stalpi",
-  plants: "Centrale",
+  plants: "Centrale (OSM)",
+  projects: "Proiecte energie",
   heatmap: "Harta termica",
 };
