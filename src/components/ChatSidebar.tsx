@@ -120,30 +120,96 @@ export default function ChatSidebar({ isOpen, onToggle }: ChatSidebarProps) {
     setInput("");
     setIsLoading(true);
 
+    // Add empty assistant message that will be streamed into
+    const assistantIdx = messages.length + 1; // +1 for the user message we just added
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
     try {
-      const res = await fetch("http://localhost:8000/api/chat", {
+      const res = await fetch("http://localhost:8000/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: trimmed, session_id: sessionId }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
 
-      const data = await res.json();
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: data.response || data.message || data.answer || "Raspuns primit.",
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) throw new Error("No reader available");
+
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.token) {
+              // Stream token into the last assistant message
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.role === "assistant") {
+                  updated[updated.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + data.token,
+                  };
+                }
+                return updated;
+              });
+            }
+
+            if (data.tool) {
+              // Show tool usage indicator
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.role === "assistant" && data.status === "start") {
+                  updated[updated.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + `\n🔍 _${data.tool}_...`,
+                  };
+                }
+                return updated;
+              });
+            }
+
+            if (data.done) break;
+            if (data.error) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: "assistant",
+                  content: `Eroare: ${data.error}`,
+                };
+                return updated;
+              });
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
     } catch {
-      const errorMessage: ChatMessage = {
-        role: "assistant",
-        content:
-          "Nu am putut contacta serverul AI. Verifica daca backend-ul PowerGrid ruleaza pe portul 8000.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[updated.length - 1]?.role === "assistant" && !updated[updated.length - 1]?.content) {
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "Nu am putut contacta serverul AI. Verifica daca backend-ul ruleaza pe portul 8000.",
+          };
+        }
+        return updated;
+      });
     } finally {
       setIsLoading(false);
     }
