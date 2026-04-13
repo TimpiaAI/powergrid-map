@@ -320,9 +320,26 @@ export default function MapView() {
     // deck.gl handles picking; this only fires when clicking empty space
   }, []);
 
+  // ── Compute combined bounding box of selected countries ─────────────
+  const selectedExtent = useMemo((): [number, number, number, number] | undefined => {
+    if (selectedCountries.length === 0) return undefined;
+    let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+    for (const code of selectedCountries) {
+      const b = COUNTRY_BOUNDS[code];
+      if (!b) continue;
+      if (b[0] < minLng) minLng = b[0];
+      if (b[1] < minLat) minLat = b[1];
+      if (b[2] > maxLng) maxLng = b[2];
+      if (b[3] > maxLat) maxLat = b[3];
+    }
+    return [minLng, minLat, maxLng, maxLat];
+  }, [selectedCountries]);
+
   // ── Build deck.gl layers ─────────────────────────────────────────────
   const deckLayers = useMemo(() => {
     const result: any[] = [];
+    // extent limits which tiles are loaded — no per-feature coordinate checks needed
+    const extent = selectedExtent;
 
     // ── Lines layers (source-layers: "lines" and "ro_lines") ──────────
     if (layers.lines) {
@@ -333,6 +350,7 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           // Render only features from the "lines" source-layer
           getFilterValue: (f: Feature<Geometry>) => {
@@ -343,7 +361,7 @@ export default function MapView() {
           extensions: [],
           getLineColor: (f: Feature<Geometry>) => {
             const p = (f.properties as any) || {};
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             if (!matchesVoltageFilter(p.voltage) || !matchesSearch(p)) return [0, 0, 0, 0];
             const c = voltageToColor(p.voltage);
             return [c[0], c[1], c[2], 38]; // low opacity for glow
@@ -363,12 +381,13 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getLineColor: (f: Feature<Geometry>) => {
             const p = (f.properties as any) || {};
             const ln = p.layerName;
             if (ln !== "lines" && ln !== "ro_lines") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             if (!matchesVoltageFilter(p.voltage) || !matchesSearch(p)) return [0, 0, 0, 0];
             return voltageToColor(p.voltage);
           },
@@ -376,7 +395,7 @@ export default function MapView() {
             const p = (f.properties as any) || {};
             const ln = p.layerName;
             if (ln !== "lines" && ln !== "ro_lines") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return voltageToWidth(p.voltage);
           },
           lineWidthUnits: "pixels" as const,
@@ -399,17 +418,18 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "substations" && ln !== "ro_substations") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [245, 158, 11, 50]; // amber fill
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "substations" && ln !== "ro_substations") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [251, 191, 36, 220]; // amber outline
           },
           getLineWidth: 2,
@@ -417,7 +437,7 @@ export default function MapView() {
           getPointRadius: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "substations" && ln !== "ro_substations") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return 6;
           },
           pointRadiusUnits: "pixels" as const,
@@ -445,19 +465,19 @@ export default function MapView() {
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "ro_towers") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [148, 163, 184, 200];
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "ro_towers") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [203, 213, 225, 100];
           },
           getPointRadius: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "ro_towers") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return 3;
           },
           pointRadiusUnits: "pixels" as const,
@@ -481,17 +501,18 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "plants" && ln !== "ro_plants") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [34, 197, 94, 65]; // green fill
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "plants" && ln !== "ro_plants") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [74, 222, 128, 180]; // green outline
           },
           getLineWidth: 2,
@@ -499,7 +520,7 @@ export default function MapView() {
           getPointRadius: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "plants" && ln !== "ro_plants") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return 6;
           },
           pointRadiusUnits: "pixels" as const,
@@ -521,17 +542,18 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "powerplants") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return fuelToColor((f.properties as any)?.fuel);
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "powerplants") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [255, 255, 255, 100] as [number, number, number, number];
           },
           getLineWidth: 1,
@@ -539,7 +561,7 @@ export default function MapView() {
           getPointRadius: (f: Feature<Geometry>) => {
             const p = (f.properties as any) || {};
             if (p.layerName !== "powerplants") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             const mw = p.capacity_mw || 0;
             if (mw >= 5000) return 14;
             if (mw >= 1000) return 10;
@@ -567,23 +589,24 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "solar") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [251, 191, 36, 220];
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "solar") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [245, 158, 11, 180];
           },
           getPointRadius: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "solar") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return 6;
           },
           pointRadiusUnits: "pixels" as const,
@@ -607,23 +630,24 @@ export default function MapView() {
           data: TILE_URL,
           minZoom: 0,
           maxZoom: 14,
+          extent,
           binary: false,
           getFillColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "wind") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [34, 211, 238, 220];
           },
           getLineColor: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "wind") return [0, 0, 0, 0];
-            if (!isInSelectedCountries(getFeatureCoords(f))) return [0, 0, 0, 0];
+
             return [6, 182, 212, 180];
           },
           getPointRadius: (f: Feature<Geometry>) => {
             const ln = (f.properties as any)?.layerName;
             if (ln !== "wind") return 0;
-            if (!isInSelectedCountries(getFeatureCoords(f))) return 0;
+
             return 5;
           },
           pointRadiusUnits: "pixels" as const,
@@ -645,7 +669,7 @@ export default function MapView() {
     matchesVoltageFilter,
     matchesSearch,
     handleDeckClick,
-    isInSelectedCountries,
+    selectedExtent,
   ]);
 
   return (
