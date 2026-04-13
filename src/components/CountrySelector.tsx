@@ -102,7 +102,7 @@ export default function CountrySelector({
   onToggleCountry,
   maxCountries = 3,
 }: CountrySelectorProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const atMax = selectedCountries.length >= maxCountries;
 
   return (
