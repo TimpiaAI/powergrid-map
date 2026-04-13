@@ -145,35 +145,39 @@ export default function MapView() {
   }, [loadJson]);
 
   // Load additional country data when countries change
+  // Note: bounding boxes overlap at borders — this is intentional,
+  // cross-border power lines are useful for grid engineers
   useEffect(() => {
     const loadCountryData = async () => {
-      const newCountries = selectedCountries.filter(c => c !== "RO");
-      if (newCountries.length === 0) {
-        // Reset to Romania only
-        const roLines = await loadJson("romania_lines.geojson");
-        const roSubs = await loadJson("romania_substations.geojson");
-        if (roLines) setLinesData(roLines);
-        if (roSubs) setSubstationsData(roSubs);
-        return;
-      }
+      // Always start with Romania
+      const [roLines, roSubs] = await Promise.all([
+        loadJson("romania_lines.geojson"),
+        loadJson("romania_substations.geojson"),
+      ]);
 
-      // Start with Romania data
-      let allLines: any[] = [];
-      let allSubs: any[] = [];
+      let allLines: any[] = roLines?.features || [];
+      let allSubs: any[] = roSubs?.features || [];
 
-      const roLines = await loadJson("romania_lines.geojson");
-      const roSubs = await loadJson("romania_substations.geojson");
-      if (roLines?.features) allLines = [...roLines.features];
-      if (roSubs?.features) allSubs = [...roSubs.features];
-
-      // Add each selected country
-      for (const code of newCountries) {
-        const [countryLines, countrySubs] = await Promise.all([
+      // Add each extra selected country
+      const extras = selectedCountries.filter(c => c !== "RO");
+      if (extras.length > 0) {
+        const loads = extras.flatMap(code => [
           loadJson(`countries/${code}_lines.geojson`),
           loadJson(`countries/${code}_substations.geojson`),
         ]);
-        if (countryLines?.features) allLines.push(...countryLines.features);
-        if (countrySubs?.features) allSubs.push(...countrySubs.features);
+        const results = await Promise.all(loads);
+        for (const r of results) {
+          if (r?.features) allLines = [...allLines, ...r.features];
+        }
+        // Actually separate lines and substations properly
+        allLines = roLines?.features || [];
+        allSubs = roSubs?.features || [];
+        for (let i = 0; i < extras.length; i++) {
+          const cl = results[i * 2];
+          const cs = results[i * 2 + 1];
+          if (cl?.features) allLines.push(...cl.features);
+          if (cs?.features) allSubs.push(...cs.features);
+        }
       }
 
       setLinesData({ type: "FeatureCollection", features: allLines });
