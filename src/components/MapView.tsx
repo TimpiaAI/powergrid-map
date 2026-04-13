@@ -321,7 +321,7 @@ export default function MapView() {
   }, []);
 
   // ── Compute combined bounding box of selected countries ─────────────
-  const selectedExtent = useMemo((): [number, number, number, number] | undefined => {
+  const selectedExtent = useMemo((): any => {
     if (selectedCountries.length === 0) return undefined;
     let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
     for (const code of selectedCountries) {
@@ -332,7 +332,7 @@ export default function MapView() {
       if (b[2] > maxLng) maxLng = b[2];
       if (b[3] > maxLat) maxLat = b[3];
     }
-    return [minLng, minLat, maxLng, maxLat];
+    return [[minLng, minLat], [maxLng, maxLat]];
   }, [selectedCountries]);
 
   // ── Build deck.gl layers ─────────────────────────────────────────────
@@ -341,40 +341,8 @@ export default function MapView() {
     // extent limits which tiles are loaded — no per-feature coordinate checks needed
     const extent = selectedExtent;
 
-    // ── Lines layers (source-layers: "lines" and "ro_lines") ──────────
+    // ── Lines layer ──────────────────────────────────────────────────────
     if (layers.lines) {
-      // Lines glow
-      result.push(
-        new MVTLayer({
-          id: "lines-glow",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          // Render only features from the "lines" source-layer
-          getFilterValue: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            return (ln === "lines" || ln === "ro_lines") ? 1 : 0;
-          },
-          filterRange: [1, 1],
-          extensions: [],
-          getLineColor: (f: Feature<Geometry>) => {
-            const p = (f.properties as any) || {};
-
-            if (!matchesVoltageFilter(p.voltage) || !matchesSearch(p)) return [0, 0, 0, 0];
-            const c = voltageToColor(p.voltage);
-            return [c[0], c[1], c[2], 38]; // low opacity for glow
-          },
-          getLineWidth: 12,
-          lineWidthUnits: "pixels" as const,
-          pickable: false,
-          stroked: false,
-          filled: false,
-        })
-      );
-
-      // Lines main
       result.push(
         new MVTLayer({
           id: "lines-main",
@@ -387,8 +355,6 @@ export default function MapView() {
             const p = (f.properties as any) || {};
             const ln = p.layerName;
             if (ln !== "lines" && ln !== "ro_lines") return [0, 0, 0, 0];
-
-            if (!matchesVoltageFilter(p.voltage) || !matchesSearch(p)) return [0, 0, 0, 0];
             return voltageToColor(p.voltage);
           },
           getLineWidth: (f: Feature<Geometry>) => {
