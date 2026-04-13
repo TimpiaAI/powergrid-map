@@ -113,7 +113,9 @@ export default function MapView() {
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Data states
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(["RO"]);
+
+  // Data states — merged from all selected countries
   const [linesData, setLinesData] = useState<any>(null);
   const [substationsData, setSubstationsData] = useState<any>(null);
   const [towersData, setTowersData] = useState<any>(null);
@@ -122,24 +124,72 @@ export default function MapView() {
   const [windData, setWindData] = useState<any>(null);
   const [powerplantsData, setPowerplantsData] = useState<any>(null);
 
-  // Load data
+  const loadJson = useCallback(async (name: string) => {
+    try {
+      const r = await fetch(`/data/${name}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  }, []);
+
+  // Load Romania + global data on mount
   useEffect(() => {
-    const load = async (name: string) => {
-      try {
-        const r = await fetch(`/data/${name}`);
-        return r.ok ? await r.json() : null;
-      } catch { return null; }
+    Promise.all([
+      loadJson("romania_lines.geojson").then(setLinesData),
+      loadJson("romania_substations.geojson").then(setSubstationsData),
+      loadJson("romania_towers.geojson").then(setTowersData),
+      loadJson("romania_plants.geojson").then(setPlantsData),
+      loadJson("europe_solar.geojson").then(setSolarData),
+      loadJson("europe_wind.geojson").then(setWindData),
+      loadJson("europe_powerplants.geojson").then(setPowerplantsData),
+    ]).then(() => setIsLoading(false));
+  }, [loadJson]);
+
+  // Load additional country data when countries change
+  useEffect(() => {
+    const loadCountryData = async () => {
+      const newCountries = selectedCountries.filter(c => c !== "RO");
+      if (newCountries.length === 0) {
+        // Reset to Romania only
+        const roLines = await loadJson("romania_lines.geojson");
+        const roSubs = await loadJson("romania_substations.geojson");
+        if (roLines) setLinesData(roLines);
+        if (roSubs) setSubstationsData(roSubs);
+        return;
+      }
+
+      // Start with Romania data
+      let allLines: any[] = [];
+      let allSubs: any[] = [];
+
+      const roLines = await loadJson("romania_lines.geojson");
+      const roSubs = await loadJson("romania_substations.geojson");
+      if (roLines?.features) allLines = [...roLines.features];
+      if (roSubs?.features) allSubs = [...roSubs.features];
+
+      // Add each selected country
+      for (const code of newCountries) {
+        const [countryLines, countrySubs] = await Promise.all([
+          loadJson(`countries/${code}_lines.geojson`),
+          loadJson(`countries/${code}_substations.geojson`),
+        ]);
+        if (countryLines?.features) allLines.push(...countryLines.features);
+        if (countrySubs?.features) allSubs.push(...countrySubs.features);
+      }
+
+      setLinesData({ type: "FeatureCollection", features: allLines });
+      setSubstationsData({ type: "FeatureCollection", features: allSubs });
     };
 
-    Promise.all([
-      load("romania_lines.geojson").then(setLinesData),
-      load("romania_substations.geojson").then(setSubstationsData),
-      load("romania_towers.geojson").then(setTowersData),
-      load("romania_plants.geojson").then(setPlantsData),
-      load("europe_solar.geojson").then(setSolarData),
-      load("europe_wind.geojson").then(setWindData),
-      load("europe_powerplants.geojson").then(setPowerplantsData),
-    ]).then(() => setIsLoading(false));
+    if (!isLoading) loadCountryData();
+  }, [selectedCountries, isLoading, loadJson]);
+
+  const handleToggleCountry = useCallback((code: string) => {
+    setSelectedCountries(prev => {
+      if (code === "RO") return prev; // Romania always selected
+      if (prev.includes(code)) return prev.filter(c => c !== code);
+      if (prev.length >= 3) return prev;
+      return [...prev, code];
+    });
   }, []);
 
   // Stats
@@ -342,6 +392,8 @@ export default function MapView() {
         voltageFilter={voltageFilter}
         onToggleVoltage={handleToggleVoltage}
         isLoading={isLoading}
+        selectedCountries={selectedCountries}
+        onToggleCountry={handleToggleCountry}
       />
 
       <InfoPanel
