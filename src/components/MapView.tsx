@@ -260,12 +260,18 @@ export default function MapView() {
       // 400kV
       ["any", ["in", "400", volts], ["in", "400000", volts]],
       rgbToHex(VOLTAGE_COLORS["400"]),
+      // 330kV
+      ["any", ["in", "330", volts], ["in", "330000", volts]],
+      rgbToHex(VOLTAGE_COLORS["330"]),
       // 220kV
       ["any", ["in", "220", volts], ["in", "220000", volts]],
       rgbToHex(VOLTAGE_COLORS["220"]),
       // 110kV
       ["any", ["in", "110", volts], ["in", "110000", volts]],
       rgbToHex(VOLTAGE_COLORS["110"]),
+      // 35kV
+      ["any", ["in", "35", volts], ["in", "35000", volts]],
+      rgbToHex(VOLTAGE_COLORS["35"]),
       // 20kV
       ["any", ["in", "20", volts], ["in", "20000", volts]],
       rgbToHex(VOLTAGE_COLORS["20"]),
@@ -842,6 +848,9 @@ export default function MapView() {
       <InfoPanel
         feature={selectedFeature}
         onClose={() => setSelectedFeature(null)}
+        onFlyTo={(lng, lat, zoom) => {
+          mapRef.current?.flyTo({ center: [lng, lat], zoom: zoom || 15, duration: 1500 });
+        }}
       />
 
       {/* Coordinate Bar */}

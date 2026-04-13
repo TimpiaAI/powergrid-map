@@ -7,8 +7,10 @@ export const VOLTAGE_COLORS: Record<string, [number, number, number]> = {
   unknown: [122, 122, 133],
   "10": [110, 151, 184],
   "20": [110, 151, 184],
+  "35": [120, 170, 140],
   "110": [85, 181, 85],
   "220": [199, 48, 48],
+  "330": [220, 60, 120],
   "400": [181, 78, 178],
   "750": [0, 193, 207],
 };
@@ -17,8 +19,10 @@ export const VOLTAGE_LABELS: Record<string, string> = {
   unknown: "Necunoscut",
   "10": "10 kV",
   "20": "20 kV",
+  "35": "35 kV",
   "110": "110 kV",
   "220": "220 kV",
+  "330": "330 kV",
   "400": "400 kV",
   "750": "750 kV",
 };
