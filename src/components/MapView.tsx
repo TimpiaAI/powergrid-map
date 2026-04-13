@@ -14,6 +14,7 @@ import maplibregl from "maplibre-gl";
 import Sidebar from "./Sidebar";
 import InfoPanel from "./InfoPanel";
 import SearchBar from "./SearchBar";
+import ChatSidebar from "./ChatSidebar";
 import {
   LayerVisibility,
   DataStats,
@@ -116,6 +117,7 @@ export default function MapView() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   // Load GeoJSON data — Romania first, then Europe if available
   useEffect(() => {
@@ -1026,6 +1028,9 @@ export default function MapView() {
           mapRef.current?.flyTo({ center: [lng, lat], zoom: zoom || 15, duration: 1500 });
         }}
       />
+
+      {/* Chat Sidebar */}
+      <ChatSidebar isOpen={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />
 
       {/* Coordinate Bar */}
       {cursorPosition && !isLoading && (
