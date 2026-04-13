@@ -11,6 +11,7 @@ import MapGL, {
   type LayerProps,
 } from "react-map-gl/maplibre";
 import maplibregl from "maplibre-gl";
+import { Protocol } from "pmtiles";
 import Sidebar from "./Sidebar";
 import InfoPanel from "./InfoPanel";
 import SearchBar from "./SearchBar";
@@ -21,7 +22,6 @@ import {
   SelectedFeature,
   VoltageFilter,
   DEFAULT_VIEW_STATE,
-  PowerFeatureCollection,
 } from "@/lib/types";
 import { VOLTAGE_COLORS, rgbToHex } from "@/lib/colors";
 
@@ -66,9 +66,15 @@ const MAP_STYLE: any = {
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
 };
 
-const EMPTY_GEOJSON: PowerFeatureCollection = {
-  type: "FeatureCollection",
-  features: [],
+// Hardcoded stats — PMTiles cannot be counted in the browser
+const stats: DataStats = {
+  lines: 394053,
+  substations: 470305,
+  towers: 111310,
+  plants: 717720,
+  projects: 0,
+  solarSatellite: 30880,
+  windSatellite: 99242,
 };
 
 export default function MapView() {
@@ -97,107 +103,18 @@ export default function MapView() {
   const [selectedFeature, setSelectedFeature] =
     useState<SelectedFeature | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-
-  const [linesData, setLinesData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [substationsData, setSubstationsData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [towersData, setTowersData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [plantsData, setPlantsData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [projectsData, setProjectsData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [solarData, setSolarData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [windData, setWindData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-  const [powerplantsData, setPowerplantsData] =
-    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
-
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Load GeoJSON data — Romania first, then Europe if available
+  // Register PMTiles protocol on mount
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-
-      // Load Romania data first (fast, small files)
-      const roFiles = [
-        { name: "romania_lines.geojson", setter: setLinesData },
-        { name: "romania_substations.geojson", setter: setSubstationsData },
-        { name: "romania_towers.geojson", setter: setTowersData },
-        { name: "romania_plants.geojson", setter: setPlantsData },
-        { name: "romania_projects.geojson", setter: setProjectsData },
-        { name: "europe_solar.geojson", setter: setSolarData },
-        { name: "europe_wind.geojson", setter: setWindData },
-        { name: "europe_powerplants.geojson", setter: setPowerplantsData },
-      ];
-
-      await Promise.allSettled(
-        roFiles.map(async ({ name, setter }) => {
-          try {
-            const res = await fetch(`/data/${name}`);
-            if (res.ok) {
-              const data = await res.json();
-              setter(data);
-            }
-          } catch {
-            // File not available yet
-          }
-        })
-      );
-
-      setIsLoading(false);
-
-      // Load ALL Europe data progressively
-      const mergeFile = async (name: string, setter: React.Dispatch<React.SetStateAction<PowerFeatureCollection>>) => {
-        try {
-          const res = await fetch(`/data/${name}`);
-          if (res.ok) {
-            const d = await res.json();
-            if (d.features?.length > 0) {
-              setter((prev: PowerFeatureCollection) => ({
-                type: "FeatureCollection",
-                features: [...prev.features, ...d.features],
-              }));
-            }
-          }
-        } catch { /* not available */ }
-      };
-
-      // Wave 1: HV lines + all substations + all plants
-      await Promise.allSettled([
-        mergeFile("europe_lines_hv.geojson", setLinesData),
-        mergeFile("europe_substations_all.geojson", setSubstationsData),
-        mergeFile("europe_plants_all.geojson", setPlantsData),
-      ]);
-
-      // Wave 2: MV lines (20-109kV)
-      await mergeFile("europe_lines_mv.geojson", setLinesData);
-
-      // Wave 3: LV lines (<20kV + unknown)
-      await mergeFile("europe_lines_lv.geojson", setLinesData);
+    const protocol = new Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    return () => {
+      maplibregl.removeProtocol("pmtiles");
     };
-
-    loadData();
   }, []);
-
-  // Compute stats
-  const stats: DataStats = useMemo(
-    () => ({
-      lines: linesData.features.length,
-      substations: substationsData.features.length,
-      towers: towersData.features.length,
-      plants: plantsData.features.length,
-      projects: projectsData.features.length,
-      solarSatellite: solarData.features.length,
-      windSatellite: windData.features.length,
-    }),
-    [linesData, substationsData, towersData, plantsData, projectsData, solarData, windData]
-  );
 
   // Build voltage filter expression for MapLibre (matches both V and kV)
   const voltageFilterExpression = useMemo((): any[] | undefined => {
@@ -323,19 +240,32 @@ export default function MapView() {
 
     const feature = e.features[0];
     const layerIdToType: Record<string, SelectedFeature["layerType"]> = {
-      "power-lines": "lines",
-      "power-lines-glow": "lines",
+      "lines-hv": "lines",
+      "lines-hv-glow": "lines",
+      "lines-mv": "lines",
+      "lines-mv-glow": "lines",
+      "lines-lv": "lines",
+      "lines-lv-glow": "lines",
+      "ro-lines": "lines",
+      "ro-lines-glow": "lines",
       "substations-fill": "substations",
       "substations-outline": "substations",
       "substations-point": "substations",
       "substations-glow": "substations",
-      towers: "towers",
+      "ro-substations-fill": "substations",
+      "ro-substations-outline": "substations",
+      "ro-substations-point": "substations",
+      "ro-substations-glow": "substations",
+      "ro-towers": "towers",
       "plants-fill": "plants",
       "plants-point": "plants",
       "plants-centroid": "plants",
       "plants-outline": "plants",
+      "ro-plants-fill": "plants",
+      "ro-plants-point": "plants",
+      "ro-plants-centroid": "plants",
+      "ro-plants-outline": "plants",
       "powerplants-circle": "plants",
-      "projects-circle": "projects",
       "solar-circle": "solarSatellite",
       "wind-circle": "windSatellite",
     };
@@ -351,15 +281,18 @@ export default function MapView() {
     setSearchQuery(query);
   }, []);
 
-  // Layer definitions
-  const linesGlowLayer: LayerProps = useMemo(
+  // ─── Layer definitions ─────────────────────────────────────────────
+  // Lines (HV) — glow
+  const linesHvGlowLayer: LayerProps = useMemo(
     () => ({
-      id: "power-lines-glow",
+      id: "lines-hv-glow",
       type: "line" as const,
+      "source-layer": "lines_hv",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
         "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
       },
       paint: {
         "line-color": lineColorExpression,
@@ -367,26 +300,27 @@ export default function MapView() {
           "interpolate",
           ["linear"],
           ["zoom"],
-          5,
-          6,
-          12,
-          14,
+          5, 6,
+          12, 14,
         ] as any,
         "line-opacity": 0.15,
         "line-blur": 4,
       },
     }),
-    [lineColorExpression, combinedFilter]
+    [lineColorExpression, combinedFilter, layers.lines]
   );
 
-  const linesLayer: LayerProps = useMemo(
+  // Lines (HV)
+  const linesHvLayer: LayerProps = useMemo(
     () => ({
-      id: "power-lines",
+      id: "lines-hv",
       type: "line" as const,
+      "source-layer": "lines_hv",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
         "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
       },
       paint: {
         "line-color": lineColorExpression,
@@ -394,42 +328,195 @@ export default function MapView() {
         "line-opacity": 0.9,
       },
     }),
-    [lineColorExpression, lineWidthExpression, combinedFilter]
+    [lineColorExpression, lineWidthExpression, combinedFilter, layers.lines]
   );
 
+  // Lines (MV) — glow
+  const linesMvGlowLayer: LayerProps = useMemo(
+    () => ({
+      id: "lines-mv-glow",
+      type: "line" as const,
+      "source-layer": "lines_mv",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 6,
+          12, 14,
+        ] as any,
+        "line-opacity": 0.15,
+        "line-blur": 4,
+      },
+    }),
+    [lineColorExpression, combinedFilter, layers.lines]
+  );
+
+  // Lines (MV)
+  const linesMvLayer: LayerProps = useMemo(
+    () => ({
+      id: "lines-mv",
+      type: "line" as const,
+      "source-layer": "lines_mv",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": lineWidthExpression,
+        "line-opacity": 0.9,
+      },
+    }),
+    [lineColorExpression, lineWidthExpression, combinedFilter, layers.lines]
+  );
+
+  // Lines (LV) — glow
+  const linesLvGlowLayer: LayerProps = useMemo(
+    () => ({
+      id: "lines-lv-glow",
+      type: "line" as const,
+      "source-layer": "lines_lv",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 6,
+          12, 14,
+        ] as any,
+        "line-opacity": 0.15,
+        "line-blur": 4,
+      },
+    }),
+    [lineColorExpression, combinedFilter, layers.lines]
+  );
+
+  // Lines (LV)
+  const linesLvLayer: LayerProps = useMemo(
+    () => ({
+      id: "lines-lv",
+      type: "line" as const,
+      "source-layer": "lines_lv",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": lineWidthExpression,
+        "line-opacity": 0.9,
+      },
+    }),
+    [lineColorExpression, lineWidthExpression, combinedFilter, layers.lines]
+  );
+
+  // Romania lines — glow
+  const roLinesGlowLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-lines-glow",
+      type: "line" as const,
+      "source-layer": "ro_lines",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 6,
+          12, 14,
+        ] as any,
+        "line-opacity": 0.15,
+        "line-blur": 4,
+      },
+    }),
+    [lineColorExpression, combinedFilter, layers.lines]
+  );
+
+  // Romania lines
+  const roLinesLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-lines",
+      type: "line" as const,
+      "source-layer": "ro_lines",
+      ...(combinedFilter ? { filter: combinedFilter as any } : {}),
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        visibility: layers.lines ? "visible" : "none",
+      },
+      paint: {
+        "line-color": lineColorExpression,
+        "line-width": lineWidthExpression,
+        "line-opacity": 0.9,
+      },
+    }),
+    [lineColorExpression, lineWidthExpression, combinedFilter, layers.lines]
+  );
+
+  // Substations (Europe) — fill
   const substationsFillLayer: LayerProps = useMemo(
     () => ({
       id: "substations-fill",
       type: "fill" as const,
+      "source-layer": "substations",
       filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
       paint: {
         "fill-color": "#f59e0b",
         "fill-opacity": 0.2,
       },
     }),
-    []
+    [layers.substations]
   );
 
   const substationsOutlineLayer: LayerProps = useMemo(
     () => ({
       id: "substations-outline",
       type: "line" as const,
+      "source-layer": "substations",
       filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
       paint: {
         "line-color": "#fbbf24",
         "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1, 14, 2.5] as any,
         "line-opacity": 0.85,
       },
     }),
-    []
+    [layers.substations]
   );
 
-  // Glow ring around substations — makes them pop and look like connection nodes
   const substationsGlowLayer: LayerProps = useMemo(
     () => ({
       id: "substations-glow",
       type: "circle" as const,
+      "source-layer": "substations",
       filter: ["==", ["geometry-type"], "Point"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate",
@@ -444,14 +531,16 @@ export default function MapView() {
         "circle-blur": 1,
       },
     }),
-    []
+    [layers.substations]
   );
 
   const substationsPointLayer: LayerProps = useMemo(
     () => ({
       id: "substations-point",
       type: "circle" as const,
+      "source-layer": "substations",
       filter: ["==", ["geometry-type"], "Point"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate",
@@ -468,15 +557,17 @@ export default function MapView() {
         "circle-stroke-opacity": 0.6,
       },
     }),
-    []
+    [layers.substations]
   );
 
   const substationsLabelLayer: LayerProps = useMemo(
     () => ({
       id: "substations-label",
       type: "symbol" as const,
+      "source-layer": "substations",
       minzoom: 8,
       layout: {
+        visibility: layers.substations ? "visible" : "none",
         "text-field": ["coalesce", ["get", "name"], ""] as any,
         "text-size": [
           "interpolate", ["linear"], ["zoom"],
@@ -496,14 +587,129 @@ export default function MapView() {
         "text-opacity": 0.9,
       },
     }),
-    []
+    [layers.substations]
   );
 
-  const towersLayer: LayerProps = useMemo(
+  // Romania substations
+  const roSubstationsFillLayer: LayerProps = useMemo(
     () => ({
-      id: "towers",
+      id: "ro-substations-fill",
+      type: "fill" as const,
+      "source-layer": "ro_substations",
+      filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
+      paint: {
+        "fill-color": "#f59e0b",
+        "fill-opacity": 0.2,
+      },
+    }),
+    [layers.substations]
+  );
+
+  const roSubstationsOutlineLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-substations-outline",
+      type: "line" as const,
+      "source-layer": "ro_substations",
+      filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
+      paint: {
+        "line-color": "#fbbf24",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1, 14, 2.5] as any,
+        "line-opacity": 0.85,
+      },
+    }),
+    [layers.substations]
+  );
+
+  const roSubstationsGlowLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-substations-glow",
       type: "circle" as const,
+      "source-layer": "ro_substations",
+      filter: ["==", ["geometry-type"], "Point"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 6,
+          10, 14,
+          15, 22,
+        ] as any,
+        "circle-color": "#f59e0b",
+        "circle-opacity": 0.08,
+        "circle-blur": 1,
+      },
+    }),
+    [layers.substations]
+  );
+
+  const roSubstationsPointLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-substations-point",
+      type: "circle" as const,
+      "source-layer": "ro_substations",
+      filter: ["==", ["geometry-type"], "Point"] as any,
+      layout: { visibility: layers.substations ? "visible" : "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5, 3,
+          10, 6,
+          15, 10,
+        ] as any,
+        "circle-color": "#f59e0b",
+        "circle-opacity": 0.9,
+        "circle-stroke-color": "#fbbf24",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.6,
+      },
+    }),
+    [layers.substations]
+  );
+
+  const roSubstationsLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-substations-label",
+      type: "symbol" as const,
+      "source-layer": "ro_substations",
+      minzoom: 8,
+      layout: {
+        visibility: layers.substations ? "visible" : "none",
+        "text-field": ["coalesce", ["get", "name"], ""] as any,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          8, 8,
+          11, 10,
+          14, 12,
+        ] as any,
+        "text-offset": [0, 1.5] as [number, number],
+        "text-anchor": "top" as const,
+        "text-max-width": 10,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#fbbf24",
+        "text-halo-color": "rgba(0, 0, 0, 0.8)",
+        "text-halo-width": 1.5,
+        "text-opacity": 0.9,
+      },
+    }),
+    [layers.substations]
+  );
+
+  // Romania towers
+  const roTowersLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-towers",
+      type: "circle" as const,
+      "source-layer": "ro_towers",
       minzoom: 7,
+      layout: { visibility: layers.towers ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -530,17 +736,18 @@ export default function MapView() {
         "circle-stroke-opacity": 0.4,
       },
     }),
-    []
+    [layers.towers]
   );
 
-  // Tower labels (show ref tag at high zoom)
-  const towersLabelLayer: LayerProps = useMemo(
+  const roTowersLabelLayer: LayerProps = useMemo(
     () => ({
-      id: "towers-label",
+      id: "ro-towers-label",
       type: "symbol" as const,
+      "source-layer": "ro_towers",
       minzoom: 14,
       layout: {
-        "text-field": ["coalesce", ["get", "ref"], ["get", "name"], ""] as any,
+        visibility: layers.towers ? "visible" : "none",
+        "text-field": ["coalesce", ["get", "ref"], ""] as any,
         "text-size": [
           "interpolate", ["linear"], ["zoom"],
           14, 8,
@@ -558,43 +765,48 @@ export default function MapView() {
         "text-opacity": 0.7,
       },
     }),
-    []
+    [layers.towers]
   );
 
+  // Plants (Europe OSM) — uses short property names: n=name, s=source, v=voltage
   const plantsFillLayer: LayerProps = useMemo(
     () => ({
       id: "plants-fill",
       type: "fill" as const,
+      "source-layer": "plants",
       filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.plants ? "visible" : "none" },
       paint: {
         "fill-color": "#22c55e",
         "fill-opacity": 0.25,
       },
     }),
-    []
+    [layers.plants]
   );
 
   const plantsOutlineLayer: LayerProps = useMemo(
     () => ({
       id: "plants-outline",
       type: "line" as const,
+      "source-layer": "plants",
       filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.plants ? "visible" : "none" },
       paint: {
         "line-color": "#4ade80",
         "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 2] as any,
         "line-opacity": 0.7,
       },
     }),
-    []
+    [layers.plants]
   );
 
-  // Show ALL plants (Point AND Polygon) as circles at low zoom
-  // This ensures polygons are visible when zoomed out (too small to see as fill)
   const plantsCentroidLayer: LayerProps = useMemo(
     () => ({
       id: "plants-centroid",
       type: "circle" as const,
+      "source-layer": "plants",
       maxzoom: 12,
+      layout: { visibility: layers.plants ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -610,15 +822,17 @@ export default function MapView() {
         "circle-stroke-opacity": 0.6,
       },
     }),
-    []
+    [layers.plants]
   );
 
   const plantsPointLayer: LayerProps = useMemo(
     () => ({
       id: "plants-point",
       type: "circle" as const,
+      "source-layer": "plants",
       filter: ["==", ["geometry-type"], "Point"] as any,
       minzoom: 12,
+      layout: { visibility: layers.plants ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -633,15 +847,135 @@ export default function MapView() {
         "circle-stroke-opacity": 0.5,
       },
     }),
-    []
+    [layers.plants]
   );
 
+  // Plants label — uses short "n" for name in PMTiles
   const plantsLabelLayer: LayerProps = useMemo(
     () => ({
       id: "plants-label",
       type: "symbol" as const,
+      "source-layer": "plants",
       minzoom: 7,
       layout: {
+        visibility: layers.plants ? "visible" : "none",
+        "text-field": ["coalesce", ["get", "n"], ["get", "name"], ""] as any,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          7, 8,
+          10, 10,
+          14, 12,
+        ] as any,
+        "text-offset": [0, 1.5] as [number, number],
+        "text-anchor": "top" as const,
+        "text-max-width": 10,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#4ade80",
+        "text-halo-color": "rgba(0, 0, 0, 0.9)",
+        "text-halo-width": 1.5,
+        "text-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          7, 0.5,
+          10, 0.8,
+          14, 1,
+        ] as any,
+      },
+    }),
+    [layers.plants]
+  );
+
+  // Romania plants — uses full property names
+  const roPlantsFilLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-plants-fill",
+      type: "fill" as const,
+      "source-layer": "ro_plants",
+      filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.plants ? "visible" : "none" },
+      paint: {
+        "fill-color": "#22c55e",
+        "fill-opacity": 0.25,
+      },
+    }),
+    [layers.plants]
+  );
+
+  const roPlantsOutlineLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-plants-outline",
+      type: "line" as const,
+      "source-layer": "ro_plants",
+      filter: ["==", ["geometry-type"], "Polygon"] as any,
+      layout: { visibility: layers.plants ? "visible" : "none" },
+      paint: {
+        "line-color": "#4ade80",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 2] as any,
+        "line-opacity": 0.7,
+      },
+    }),
+    [layers.plants]
+  );
+
+  const roPlantsCentroidLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-plants-centroid",
+      type: "circle" as const,
+      "source-layer": "ro_plants",
+      maxzoom: 12,
+      layout: { visibility: layers.plants ? "visible" : "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          4, 3,
+          7, 5,
+          10, 7,
+          12, 9,
+        ] as any,
+        "circle-color": "#22c55e",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#4ade80",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.6,
+      },
+    }),
+    [layers.plants]
+  );
+
+  const roPlantsPointLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-plants-point",
+      type: "circle" as const,
+      "source-layer": "ro_plants",
+      filter: ["==", ["geometry-type"], "Point"] as any,
+      minzoom: 12,
+      layout: { visibility: layers.plants ? "visible" : "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          12, 6,
+          15, 10,
+          18, 14,
+        ] as any,
+        "circle-color": "#22c55e",
+        "circle-opacity": 0.8,
+        "circle-stroke-color": "#4ade80",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.5,
+      },
+    }),
+    [layers.plants]
+  );
+
+  const roPlantsLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "ro-plants-label",
+      type: "symbol" as const,
+      "source-layer": "ro_plants",
+      minzoom: 7,
+      layout: {
+        visibility: layers.plants ? "visible" : "none",
         "text-field": ["coalesce", ["get", "name"], ""] as any,
         "text-size": [
           "interpolate", ["linear"], ["zoom"],
@@ -666,14 +1000,17 @@ export default function MapView() {
         ] as any,
       },
     }),
-    []
+    [layers.plants]
   );
 
+  // Heatmap layer — on substations source-layer
   const heatmapLayer: LayerProps = useMemo(
     () => ({
       id: "heatmap",
       type: "heatmap" as const,
+      "source-layer": "substations",
       maxzoom: 12,
+      layout: { visibility: layers.heatmap ? "visible" : "none" },
       paint: {
         "heatmap-weight": 1,
         "heatmap-intensity": [
@@ -714,7 +1051,7 @@ export default function MapView() {
         "heatmap-opacity": 0.7,
       },
     }),
-    []
+    [layers.heatmap]
   );
 
   // Microsoft satellite-detected solar parks
@@ -722,6 +1059,8 @@ export default function MapView() {
     () => ({
       id: "solar-circle",
       type: "circle" as const,
+      "source-layer": "solar",
+      layout: { visibility: layers.solarSatellite ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -734,15 +1073,17 @@ export default function MapView() {
         "circle-stroke-opacity": 0.7,
       },
     }),
-    []
+    [layers.solarSatellite]
   );
 
   const solarLabelLayer: LayerProps = useMemo(
     () => ({
       id: "solar-label",
       type: "symbol" as const,
+      "source-layer": "solar",
       minzoom: 11,
       layout: {
+        visibility: layers.solarSatellite ? "visible" : "none",
         "text-field": ["concat", ["to-string", ["round", ["get", "area_ha"]]], " ha"] as any,
         "text-size": 10,
         "text-offset": [0, 1.5] as [number, number],
@@ -755,7 +1096,7 @@ export default function MapView() {
         "text-halo-width": 1.5,
       },
     }),
-    []
+    [layers.solarSatellite]
   );
 
   // Microsoft satellite-detected wind turbines
@@ -763,6 +1104,8 @@ export default function MapView() {
     () => ({
       id: "wind-circle",
       type: "circle" as const,
+      "source-layer": "wind",
+      layout: { visibility: layers.windSatellite ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -775,7 +1118,7 @@ export default function MapView() {
         "circle-stroke-opacity": 0.7,
       },
     }),
-    []
+    [layers.windSatellite]
   );
 
   // WRI Power Plants — all types, color by fuel
@@ -783,6 +1126,8 @@ export default function MapView() {
     () => ({
       id: "powerplants-circle",
       type: "circle" as const,
+      "source-layer": "powerplants",
+      layout: { visibility: layers.plants ? "visible" : "none" },
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
@@ -814,16 +1159,18 @@ export default function MapView() {
         "circle-stroke-opacity": 0.4,
       },
     }),
-    []
+    [layers.plants]
   );
 
   const powerplantsLabelLayer: LayerProps = useMemo(
     () => ({
       id: "powerplants-label",
       type: "symbol" as const,
+      "source-layer": "powerplants",
       minzoom: 8,
       filter: [">", ["get", "capacity_mw"], 50] as any,
       layout: {
+        visibility: layers.plants ? "visible" : "none",
         "text-field": [
           "concat",
           ["get", "name"],
@@ -847,80 +1194,24 @@ export default function MapView() {
         "text-opacity": 0.85,
       },
     }),
-    []
-  );
-
-  // Projects layer — color by status
-  const projectsCircleLayer: LayerProps = useMemo(
-    () => ({
-      id: "projects-circle",
-      type: "circle" as const,
-      paint: {
-        "circle-radius": [
-          "interpolate", ["linear"], ["zoom"],
-          5, 3, 10, 6, 15, 10,
-        ] as any,
-        "circle-color": [
-          "match", ["get", "status"],
-          "operational", "#ffffff",
-          "certificat", "#22c55e",
-          "contract_activ", "#3b82f6",
-          "contract_prelungit", "#6366f1",
-          "ss_aprobat", "#8b5cf6",
-          "ss_analiza", "#a855f7",
-          "atr", "#eab308",
-          "contract_reziliat", "#ef4444",
-          "ss_expirat", "#71717a",
-          "#f59e0b",
-        ] as any,
-        "circle-opacity": 0.9,
-        "circle-stroke-color": [
-          "match", ["get", "type"],
-          "fotovoltaic", "#fbbf24",
-          "eolian", "#38bdf8",
-          "hidro", "#22d3ee",
-          "biomasa", "#4ade80",
-          "stocare", "#c084fc",
-          "#94a3b8",
-        ] as any,
-        "circle-stroke-width": 2,
-        "circle-stroke-opacity": 0.8,
-      },
-    }),
-    []
-  );
-
-  const projectsLabelLayer: LayerProps = useMemo(
-    () => ({
-      id: "projects-label",
-      type: "symbol" as const,
-      minzoom: 10,
-      layout: {
-        "text-field": ["coalesce", ["get", "name"], ""] as any,
-        "text-size": 10,
-        "text-offset": [0, 1.8] as [number, number],
-        "text-anchor": "top" as const,
-        "text-max-width": 12,
-        "text-font": ["Open Sans Regular"],
-      },
-      paint: {
-        "text-color": "#fde68a",
-        "text-halo-color": "rgba(0, 0, 0, 0.9)",
-        "text-halo-width": 1.5,
-        "text-opacity": 0.85,
-      },
-    }),
-    []
+    [layers.plants]
   );
 
   const interactiveLayerIds = useMemo(() => {
     const ids: string[] = [];
-    if (layers.lines) ids.push("power-lines");
+    if (layers.lines) ids.push("lines-hv", "lines-mv", "lines-lv", "ro-lines");
     if (layers.substations)
-      ids.push("substations-fill", "substations-outline", "substations-point");
-    if (layers.towers) ids.push("towers");
-    if (layers.plants) ids.push("plants-fill", "plants-point", "plants-centroid", "powerplants-circle");
-    if (layers.projects) ids.push("projects-circle");
+      ids.push(
+        "substations-fill", "substations-outline", "substations-point",
+        "ro-substations-fill", "ro-substations-outline", "ro-substations-point"
+      );
+    if (layers.towers) ids.push("ro-towers");
+    if (layers.plants)
+      ids.push(
+        "plants-fill", "plants-point", "plants-centroid",
+        "ro-plants-fill", "ro-plants-point", "ro-plants-centroid",
+        "powerplants-circle"
+      );
     if (layers.solarSatellite) ids.push("solar-circle");
     if (layers.windSatellite) ids.push("wind-circle");
     return ids;
@@ -937,6 +1228,7 @@ export default function MapView() {
         onClick={handleMapClick}
         interactiveLayerIds={interactiveLayerIds}
         onMouseMove={(e) => setCursorPosition([e.lngLat.lng, e.lngLat.lat])}
+        onLoad={() => setIsLoading(false)}
         cursor="default"
         attributionControl={true}
         maxZoom={19}
@@ -945,58 +1237,73 @@ export default function MapView() {
         <NavigationControl position="bottom-right" showCompass visualizePitch />
         <ScaleControl position="bottom-left" maxWidth={200} unit="metric" />
 
-        {/* Power Lines */}
-        <Source id="lines" type="geojson" data={linesData}>
-          {layers.lines && <Layer {...linesGlowLayer} />}
-          {layers.lines && <Layer {...linesLayer} />}
-        </Source>
+        {/* Single PMTiles vector source for all layers */}
+        <Source
+          id="powergrid"
+          type="vector"
+          url="pmtiles:///data/powergrid.pmtiles"
+        >
+          {/* Lines (HV) */}
+          <Layer {...linesHvGlowLayer} />
+          <Layer {...linesHvLayer} />
 
-        {/* Substations */}
-        <Source id="substations" type="geojson" data={substationsData}>
-          {layers.heatmap && <Layer {...heatmapLayer} />}
-          {layers.substations && <Layer {...substationsGlowLayer} />}
-          {layers.substations && <Layer {...substationsFillLayer} />}
-          {layers.substations && <Layer {...substationsOutlineLayer} />}
-          {layers.substations && <Layer {...substationsPointLayer} />}
-          {layers.substations && <Layer {...substationsLabelLayer} />}
-        </Source>
+          {/* Lines (MV) */}
+          <Layer {...linesMvGlowLayer} />
+          <Layer {...linesMvLayer} />
 
-        {/* Towers */}
-        <Source id="towers" type="geojson" data={towersData}>
-          {layers.towers && <Layer {...towersLayer} />}
-          {layers.towers && <Layer {...towersLabelLayer} />}
-        </Source>
+          {/* Lines (LV) */}
+          <Layer {...linesLvGlowLayer} />
+          <Layer {...linesLvLayer} />
 
-        {/* Power Plants (OSM) */}
-        <Source id="plants" type="geojson" data={plantsData}>
-          {layers.plants && <Layer {...plantsCentroidLayer} />}
-          {layers.plants && <Layer {...plantsFillLayer} />}
-          {layers.plants && <Layer {...plantsOutlineLayer} />}
-          {layers.plants && <Layer {...plantsPointLayer} />}
-          {layers.plants && <Layer {...plantsLabelLayer} />}
-        </Source>
+          {/* Romania Lines */}
+          <Layer {...roLinesGlowLayer} />
+          <Layer {...roLinesLayer} />
 
-        {/* Energy Projects (ATR/SS/Contracte/PIF) */}
-        <Source id="projects" type="geojson" data={projectsData}>
-          {layers.projects && <Layer {...projectsCircleLayer} />}
-          {layers.projects && <Layer {...projectsLabelLayer} />}
-        </Source>
+          {/* Heatmap */}
+          <Layer {...heatmapLayer} />
 
-        {/* Microsoft satellite-detected solar parks */}
-        <Source id="solar" type="geojson" data={solarData}>
-          {layers.solarSatellite && <Layer {...solarCircleLayer} />}
-          {layers.solarSatellite && <Layer {...solarLabelLayer} />}
-        </Source>
+          {/* Substations (Europe) */}
+          <Layer {...substationsGlowLayer} />
+          <Layer {...substationsFillLayer} />
+          <Layer {...substationsOutlineLayer} />
+          <Layer {...substationsPointLayer} />
+          <Layer {...substationsLabelLayer} />
 
-        {/* Microsoft satellite-detected wind turbines */}
-        <Source id="wind" type="geojson" data={windData}>
-          {layers.windSatellite && <Layer {...windCircleLayer} />}
-        </Source>
+          {/* Romania Substations */}
+          <Layer {...roSubstationsGlowLayer} />
+          <Layer {...roSubstationsFillLayer} />
+          <Layer {...roSubstationsOutlineLayer} />
+          <Layer {...roSubstationsPointLayer} />
+          <Layer {...roSubstationsLabelLayer} />
 
-        {/* WRI Power Plants (all types: thermal, hydro, nuclear, gas, etc.) */}
-        <Source id="powerplants" type="geojson" data={powerplantsData}>
-          {layers.plants && <Layer {...powerplantsCircleLayer} />}
-          {layers.plants && <Layer {...powerplantsLabelLayer} />}
+          {/* Romania Towers */}
+          <Layer {...roTowersLayer} />
+          <Layer {...roTowersLabelLayer} />
+
+          {/* Plants (Europe OSM) */}
+          <Layer {...plantsCentroidLayer} />
+          <Layer {...plantsFillLayer} />
+          <Layer {...plantsOutlineLayer} />
+          <Layer {...plantsPointLayer} />
+          <Layer {...plantsLabelLayer} />
+
+          {/* Romania Plants */}
+          <Layer {...roPlantsCentroidLayer} />
+          <Layer {...roPlantsFilLayer} />
+          <Layer {...roPlantsOutlineLayer} />
+          <Layer {...roPlantsPointLayer} />
+          <Layer {...roPlantsLabelLayer} />
+
+          {/* Microsoft satellite-detected solar parks */}
+          <Layer {...solarCircleLayer} />
+          <Layer {...solarLabelLayer} />
+
+          {/* Microsoft satellite-detected wind turbines */}
+          <Layer {...windCircleLayer} />
+
+          {/* WRI Power Plants */}
+          <Layer {...powerplantsCircleLayer} />
+          <Layer {...powerplantsLabelLayer} />
         </Source>
       </MapGL>
 
@@ -1006,9 +1313,7 @@ export default function MapView() {
         onFlyTo={(lng, lat, zoom) => {
           mapRef.current?.flyTo({ center: [lng, lat], zoom: zoom || 14, duration: 1500 });
         }}
-        linesData={linesData}
-        substationsData={substationsData}
-        plantsData={plantsData}
+        mapRef={mapRef}
       />
 
       {/* Sidebar */}

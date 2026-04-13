@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Search, X, MapPin, Zap, Building2 } from "lucide-react";
+import type { MapRef } from "react-map-gl/maplibre";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -16,9 +17,7 @@ interface SearchResult {
 interface SearchBarProps {
   onSearch: (query: string) => void;
   onFlyTo?: (lng: number, lat: number, zoom?: number) => void;
-  linesData?: any;
-  substationsData?: any;
-  plantsData?: any;
+  mapRef?: React.RefObject<MapRef | null>;
 }
 
 function getFeatureCenter(feature: any): [number, number] | null {
@@ -60,29 +59,40 @@ function getFeatureCenter(feature: any): [number, number] | null {
   return null;
 }
 
-function searchFeatures(
+/**
+ * Search rendered features on the map via queryRenderedFeatures.
+ * This works with vector tile sources (PMTiles).
+ */
+function searchRenderedFeatures(
   query: string,
-  linesData: any,
-  substationsData: any,
-  plantsData: any
+  mapRef: React.RefObject<MapRef | null>
 ): SearchResult[] {
+  const map = mapRef.current?.getMap();
+  if (!map) return [];
+
   const q = query.toLowerCase();
   const results: SearchResult[] = [];
+  const seen = new Set<string>();
 
-  const datasets = [
-    { data: substationsData, layerType: "substations", label: "Statie" },
-    { data: plantsData, layerType: "plants", label: "Centrala" },
-    { data: linesData, layerType: "lines", label: "Linie" },
+  // Query all rendered features from the vector source
+  const layerConfigs = [
+    { layers: ["substations-point", "substations-fill", "ro-substations-point", "ro-substations-fill"], layerType: "substations", label: "Statie" },
+    { layers: ["plants-point", "plants-fill", "plants-centroid", "ro-plants-point", "ro-plants-fill", "powerplants-circle"], layerType: "plants", label: "Centrala" },
+    { layers: ["lines-hv", "lines-mv", "lines-lv", "ro-lines"], layerType: "lines", label: "Linie" },
   ];
 
-  for (const { data, layerType, label } of datasets) {
-    if (!data?.features) continue;
-    for (const feature of data.features) {
+  for (const { layers, layerType, label } of layerConfigs) {
+    const existingLayers = layers.filter((l) => map.getLayer(l));
+    if (existingLayers.length === 0) continue;
+
+    const features = map.queryRenderedFeatures(undefined, { layers: existingLayers });
+
+    for (const feature of features) {
       const props = feature.properties || {};
-      const name = (props.name || "").toLowerCase();
-      const voltage = (props.voltage || "").toLowerCase();
-      const operator = (props.operator || "").toLowerCase();
-      const ref = (props.ref || "").toLowerCase();
+      const name = (props.name || props.n || "").toString().toLowerCase();
+      const voltage = (props.voltage || props.v || "").toString().toLowerCase();
+      const operator = (props.operator || "").toString().toLowerCase();
+      const ref = (props.ref || "").toString().toLowerCase();
 
       if (
         name.includes(q) ||
@@ -90,11 +100,16 @@ function searchFeatures(
         operator.includes(q) ||
         ref.includes(q)
       ) {
+        const displayName = props.name || props.n || `${label} ${props.voltage || props.v || ""}`.trim();
+        const key = `${displayName}-${layerType}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
         const center = getFeatureCenter(feature);
         if (center) {
           results.push({
-            name: props.name || `${label} ${props.voltage || ""}`.trim(),
-            voltage: props.voltage,
+            name: displayName,
+            voltage: props.voltage || props.v,
             type: label,
             coordinates: center,
             layerType,
@@ -112,9 +127,7 @@ function searchFeatures(
 export default function SearchBar({
   onSearch,
   onFlyTo,
-  linesData,
-  substationsData,
-  plantsData,
+  mapRef,
 }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -130,8 +143,8 @@ export default function SearchBar({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         onSearch(value.trim());
-        if (value.trim().length >= 2) {
-          const found = searchFeatures(value.trim(), linesData, substationsData, plantsData);
+        if (value.trim().length >= 2 && mapRef) {
+          const found = searchRenderedFeatures(value.trim(), mapRef);
           setResults(found);
           setShowResults(found.length > 0);
         } else {
@@ -140,7 +153,7 @@ export default function SearchBar({
         }
       }, 300);
     },
-    [onSearch, linesData, substationsData, plantsData]
+    [onSearch, mapRef]
   );
 
   const handleClear = useCallback(() => {
