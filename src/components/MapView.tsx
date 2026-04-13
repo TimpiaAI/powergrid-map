@@ -125,8 +125,8 @@ export default function MapView() {
         { name: "romania_towers.geojson", setter: setTowersData },
         { name: "romania_plants.geojson", setter: setPlantsData },
         { name: "romania_projects.geojson", setter: setProjectsData },
-        { name: "microsoft_solar_romania.geojson", setter: setSolarData },
-        { name: "microsoft_wind_romania.geojson", setter: setWindData },
+        { name: "europe_solar.geojson", setter: setSolarData },
+        { name: "europe_wind.geojson", setter: setWindData },
       ];
 
       await Promise.allSettled(
