@@ -107,12 +107,6 @@ export default function MapView() {
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Fallback: dismiss loading after 3s
-  useEffect(() => {
-    const t = setTimeout(() => setIsLoading(false), 3000);
-    return () => clearTimeout(t);
-  }, []);
-
   // Register PMTiles protocol on mount
   useEffect(() => {
     const protocol = new Protocol();
@@ -1248,6 +1242,7 @@ export default function MapView() {
           id="powergrid"
           type="vector"
           url="pmtiles:///data/powergrid.pmtiles"
+          maxzoom={14}
         >
           {/* Lines (HV) */}
           <Layer {...linesHvGlowLayer} />
