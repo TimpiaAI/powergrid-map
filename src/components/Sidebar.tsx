@@ -27,8 +27,6 @@ import {
 } from "@/lib/types";
 import { getVoltageClasses, rgbToHex } from "@/lib/colors";
 import Legend from "./Legend";
-import CountrySelector from "./CountrySelector";
-
 interface SidebarProps {
   layers: LayerVisibility;
   onToggleLayer: (layer: keyof LayerVisibility) => void;
@@ -36,8 +34,6 @@ interface SidebarProps {
   voltageFilter: VoltageFilter;
   onToggleVoltage: (voltage: string) => void;
   isLoading: boolean;
-  selectedCountries: string[];
-  onToggleCountry: (code: string) => void;
 }
 
 const LAYER_ICONS: Record<string, React.ReactNode> = {
@@ -67,8 +63,6 @@ export default function Sidebar({
   voltageFilter,
   onToggleVoltage,
   isLoading,
-  selectedCountries,
-  onToggleCountry,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [projectTypeFilter, setProjectTypeFilter] = useState<Record<string, boolean>>(() => {
@@ -229,13 +223,6 @@ export default function Sidebar({
 
         {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: "auto" as const }}>
-          {/* Country Selector */}
-          <CountrySelector
-            selectedCountries={selectedCountries}
-            onToggleCountry={onToggleCountry}
-            maxCountries={3}
-          />
-
           {/* Layer Toggles */}
           <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e1e24" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>

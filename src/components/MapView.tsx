@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import MapGL, {
   NavigationControl,
   ScaleControl,
-  MapLayerMouseEvent,
   MapRef,
   useControl,
 } from "react-map-gl/maplibre";
 import maplibregl from "maplibre-gl";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { MVTLayer } from "@deck.gl/geo-layers";
-import type { Feature, Geometry } from "geojson";
+import { GeoJsonLayer } from "@deck.gl/layers";
 import Sidebar from "./Sidebar";
 import InfoPanel from "./InfoPanel";
 import SearchBar from "./SearchBar";
@@ -24,7 +22,6 @@ import {
   DEFAULT_VIEW_STATE,
 } from "@/lib/types";
 import { VOLTAGE_COLORS } from "@/lib/colors";
-import { COUNTRY_BOUNDS } from "./CountrySelector";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,65 +30,38 @@ const MAP_STYLE: any = {
   sources: {
     satellite: {
       type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      ],
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
       tileSize: 256,
       attribution: "© Esri",
       maxzoom: 19,
     },
     labels: {
       type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-      ],
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"],
       tileSize: 256,
       maxzoom: 19,
     },
   },
   layers: [
-    {
-      id: "satellite",
-      type: "raster",
-      source: "satellite",
-    },
-    {
-      id: "labels",
-      type: "raster",
-      source: "labels",
-      paint: {
-        "raster-opacity": 0.75,
-      },
-    },
+    { id: "satellite", type: "raster", source: "satellite" },
+    { id: "labels", type: "raster", source: "labels", paint: { "raster-opacity": 0.75 } },
   ],
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
 };
 
-// Hardcoded stats -- PMTiles cannot be counted in the browser
-const stats: DataStats = {
-  lines: 394053,
-  substations: 470305,
-  towers: 111310,
-  plants: 717720,
-  projects: 0,
-  solarSatellite: 30880,
-  windSatellite: 99242,
-};
-
-// ── Voltage color helpers ──────────────────────────────────────────────
-// Returns [R, G, B, A] for a voltage string (handles both kV and V)
+// Voltage color helpers
 function voltageToColor(voltage: string | undefined | null): [number, number, number, number] {
-  if (!voltage) return [...VOLTAGE_COLORS.unknown, 230];
+  if (!voltage) return [...VOLTAGE_COLORS.unknown, 200];
   const v = String(voltage);
-  if (v.includes("750") || v.includes("750000")) return [...VOLTAGE_COLORS["750"], 230];
-  if (v.includes("400") || v.includes("400000")) return [...VOLTAGE_COLORS["400"], 230];
-  if (v.includes("330") || v.includes("330000")) return [...VOLTAGE_COLORS["330"], 230];
-  if (v.includes("220") || v.includes("220000")) return [...VOLTAGE_COLORS["220"], 230];
-  if (v.includes("110") || v.includes("110000")) return [...VOLTAGE_COLORS["110"], 230];
-  if (v.includes("35") || v.includes("35000")) return [...VOLTAGE_COLORS["35"], 230];
-  if (v.includes("20") || v.includes("20000")) return [...VOLTAGE_COLORS["20"], 230];
-  if (v.includes("10") || v.includes("10000")) return [...VOLTAGE_COLORS["10"], 230];
-  return [...VOLTAGE_COLORS.unknown, 230];
+  if (v.includes("750") || v.includes("750000")) return [...VOLTAGE_COLORS["750"], 220];
+  if (v.includes("400") || v.includes("400000")) return [...VOLTAGE_COLORS["400"], 220];
+  if (v.includes("330") || v.includes("330000")) return [...VOLTAGE_COLORS["330"], 220];
+  if (v.includes("220") || v.includes("220000")) return [...VOLTAGE_COLORS["220"], 220];
+  if (v.includes("110") || v.includes("110000")) return [...VOLTAGE_COLORS["110"], 220];
+  if (v.includes("35") || v.includes("35000")) return [...VOLTAGE_COLORS["35"], 220];
+  if (v.includes("20") || v.includes("20000")) return [...VOLTAGE_COLORS["20"], 220];
+  if (v.includes("10") || v.includes("10000")) return [...VOLTAGE_COLORS["10"], 220];
+  return [...VOLTAGE_COLORS.unknown, 200];
 }
 
 function voltageToWidth(voltage: string | undefined | null): number {
@@ -101,13 +71,9 @@ function voltageToWidth(voltage: string | undefined | null): number {
   if (v.includes("400") || v.includes("400000")) return 3.5;
   if (v.includes("220") || v.includes("220000")) return 3;
   if (v.includes("110") || v.includes("110000")) return 2.5;
-  if (v.includes("35") || v.includes("35000")) return 1.8;
-  if (v.includes("20") || v.includes("20000")) return 1.5;
-  if (v.includes("10") || v.includes("10000")) return 1.2;
-  return 1;
+  return 1.5;
 }
 
-// Fuel type -> RGBA color for WRI power plants
 function fuelToColor(fuel: string | undefined | null): [number, number, number, number] {
   switch (fuel) {
     case "solar": return [251, 191, 36, 220];
@@ -116,527 +82,230 @@ function fuelToColor(fuel: string | undefined | null): [number, number, number, 
     case "nuclear": return [244, 63, 94, 220];
     case "carbune": return [120, 113, 108, 220];
     case "gaz": return [249, 115, 22, 220];
-    case "petrol": return [161, 98, 7, 220];
     case "biomasa": return [74, 222, 128, 220];
-    case "deseuri": return [163, 163, 163, 220];
-    case "geotermal": return [232, 121, 249, 220];
-    case "cogenerare": return [251, 146, 60, 220];
     case "stocare": return [192, 132, 252, 220];
     default: return [113, 113, 122, 220];
   }
 }
 
-// ── DeckGL overlay component for react-map-gl/maplibre ─────────────────
+// DeckGL overlay
 function DeckGLOverlay(props: { layers: any[] }) {
-  const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ interleaved: true })
-  );
+  const overlay = useControl<MapboxOverlay>(() => new MapboxOverlay({ interleaved: true }));
   overlay.setProps({ layers: props.layers });
   return null;
 }
 
-// ── Tile URL ──────────────────────────────────────────────────────────
-const TILE_URL = "/api/tiles/{z}/{x}/{y}";
-
-// ── Main component ────────────────────────────────────────────────────
 export default function MapView() {
   const mapRef = useRef<MapRef>(null);
-
   const [viewState, setViewState] = useState(DEFAULT_VIEW_STATE);
   const [layers, setLayers] = useState<LayerVisibility>({
-    lines: true,
-    substations: true,
-    towers: true,
-    plants: true,
-    projects: true,
-    solarSatellite: true,
-    windSatellite: true,
-    heatmap: false,
+    lines: true, substations: true, towers: true, plants: true,
+    projects: false, solarSatellite: true, windSatellite: true, heatmap: false,
   });
-
   const [voltageFilter, setVoltageFilter] = useState<VoltageFilter>(() => {
-    const filter: VoltageFilter = {};
-    Object.keys(VOLTAGE_COLORS).forEach((v) => {
-      if (v !== "unknown") filter[v] = true;
-    });
-    return filter;
+    const f: VoltageFilter = {};
+    Object.keys(VOLTAGE_COLORS).forEach((v) => { if (v !== "unknown") f[v] = true; });
+    return f;
   });
-
-  const [selectedFeature, setSelectedFeature] =
-    useState<SelectedFeature | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const [selectedCountries, setSelectedCountries] = useState<string[]>(["RO"]);
 
-  // Active voltage set for filtering
-  const activeVoltages = useMemo(() => {
-    return new Set(
-      Object.entries(voltageFilter)
-        .filter(([, active]) => active)
-        .map(([v]) => v)
-    );
-  }, [voltageFilter]);
+  // Data states
+  const [linesData, setLinesData] = useState<any>(null);
+  const [substationsData, setSubstationsData] = useState<any>(null);
+  const [towersData, setTowersData] = useState<any>(null);
+  const [plantsData, setPlantsData] = useState<any>(null);
+  const [solarData, setSolarData] = useState<any>(null);
+  const [windData, setWindData] = useState<any>(null);
+  const [powerplantsData, setPowerplantsData] = useState<any>(null);
 
-  const allVoltagesActive = activeVoltages.size === Object.keys(voltageFilter).length;
+  // Load data
+  useEffect(() => {
+    const load = async (name: string) => {
+      try {
+        const r = await fetch(`/data/${name}`);
+        return r.ok ? await r.json() : null;
+      } catch { return null; }
+    };
 
-  // Filter function: checks if a feature's voltage matches the active filter
-  const matchesVoltageFilter = useCallback(
-    (voltage: string | undefined | null): boolean => {
-      if (allVoltagesActive) return true;
-      if (!voltage) return false;
-      const v = String(voltage);
-      for (const kv of activeVoltages) {
-        if (v.includes(kv) || v.includes(String(parseInt(kv) * 1000))) return true;
-      }
-      return false;
-    },
-    [activeVoltages, allVoltagesActive]
-  );
-
-  // Filter function: checks if a feature matches the search query
-  const matchesSearch = useCallback(
-    (props: Record<string, any>): boolean => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      const name = String(props.name || props.n || "").toLowerCase();
-      const voltage = String(props.voltage || props.v || "").toLowerCase();
-      const operator = String(props.operator || "").toLowerCase();
-      const ref = String(props.ref || "").toLowerCase();
-      return (
-        name.includes(q) ||
-        voltage.includes(q) ||
-        operator.includes(q) ||
-        ref.includes(q)
-      );
-    },
-    [searchQuery]
-  );
-
-  const handleToggleLayer = useCallback((layer: keyof LayerVisibility) => {
-    setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
+    Promise.all([
+      load("romania_lines.geojson").then(setLinesData),
+      load("romania_substations.geojson").then(setSubstationsData),
+      load("romania_towers.geojson").then(setTowersData),
+      load("romania_plants.geojson").then(setPlantsData),
+      load("europe_solar.geojson").then(setSolarData),
+      load("europe_wind.geojson").then(setWindData),
+      load("europe_powerplants.geojson").then(setPowerplantsData),
+    ]).then(() => setIsLoading(false));
   }, []);
 
-  const handleToggleVoltage = useCallback((voltage: string) => {
-    setVoltageFilter((prev) => ({ ...prev, [voltage]: !prev[voltage] }));
+  // Stats
+  const stats: DataStats = useMemo(() => ({
+    lines: linesData?.features?.length || 0,
+    substations: substationsData?.features?.length || 0,
+    towers: towersData?.features?.length || 0,
+    plants: (plantsData?.features?.length || 0) + (powerplantsData?.features?.length || 0),
+    projects: 0,
+    solarSatellite: solarData?.features?.length || 0,
+    windSatellite: windData?.features?.length || 0,
+  }), [linesData, substationsData, towersData, plantsData, solarData, windData, powerplantsData]);
+
+  const handleToggleLayer = useCallback((l: keyof LayerVisibility) => {
+    setLayers((p) => ({ ...p, [l]: !p[l] }));
   }, []);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
+  const handleToggleVoltage = useCallback((v: string) => {
+    setVoltageFilter((p) => ({ ...p, [v]: !p[v] }));
   }, []);
+  const handleSearch = useCallback((q: string) => { setSearchQuery(q); }, []);
 
-  const handleToggleCountry = useCallback((code: string) => {
-    setSelectedCountries((prev) => {
-      if (prev.includes(code)) {
-        return prev.filter((c) => c !== code);
-      }
-      if (prev.length >= 3) return prev;
-      return [...prev, code];
-    });
-  }, []);
-
-  // ── Country bounding-box helpers ─────────────────────────────────────
-  const isInSelectedCountries = useCallback(
-    (coords: [number, number] | null): boolean => {
-      if (!coords) return false;
-      const [lng, lat] = coords;
-      for (const code of selectedCountries) {
-        const bounds = COUNTRY_BOUNDS[code];
-        if (
-          bounds &&
-          lng >= bounds[0] &&
-          lat >= bounds[1] &&
-          lng <= bounds[2] &&
-          lat <= bounds[3]
-        )
-          return true;
-      }
-      return false;
-    },
-    [selectedCountries]
-  );
-
-  // Extract representative coordinate from an MVT feature
-  function getFeatureCoords(f: Feature<Geometry>): [number, number] | null {
-    const geom = f.geometry;
-    if (!geom) return null;
-    if (geom.type === "Point") return geom.coordinates as [number, number];
-    if (geom.type === "MultiPoint" && geom.coordinates.length > 0)
-      return geom.coordinates[0] as [number, number];
-    if (geom.type === "LineString" && geom.coordinates.length > 0)
-      return geom.coordinates[0] as [number, number];
-    if (
-      geom.type === "MultiLineString" &&
-      geom.coordinates.length > 0 &&
-      geom.coordinates[0].length > 0
-    )
-      return geom.coordinates[0][0] as [number, number];
-    if (
-      geom.type === "Polygon" &&
-      geom.coordinates.length > 0 &&
-      geom.coordinates[0].length > 0
-    )
-      return geom.coordinates[0][0] as [number, number];
-    if (
-      geom.type === "MultiPolygon" &&
-      geom.coordinates.length > 0 &&
-      geom.coordinates[0].length > 0 &&
-      geom.coordinates[0][0].length > 0
-    )
-      return geom.coordinates[0][0][0] as [number, number];
-    return null;
-  }
-
-  // ── Click handler for deck.gl picking ────────────────────────────────
+  // Click handler
   const handleDeckClick = useCallback((info: any) => {
-    if (!info.object) {
-      setSelectedFeature(null);
-      return;
-    }
-
-    const f = info.object;
-    const props = f.properties || {};
-    const layerId: string = info.layer?.id || "";
-
+    if (!info.object) { setSelectedFeature(null); return; }
+    const props = info.object.properties || {};
+    const id: string = info.layer?.id || "";
     let layerType: SelectedFeature["layerType"] = "lines";
-    if (layerId.includes("substation")) layerType = "substations";
-    else if (layerId.includes("tower")) layerType = "towers";
-    else if (layerId.includes("plant") || layerId.includes("powerplant")) layerType = "plants";
-    else if (layerId.includes("solar")) layerType = "solarSatellite";
-    else if (layerId.includes("wind")) layerType = "windSatellite";
-    else if (layerId.includes("line") || layerId.includes("ro-line")) layerType = "lines";
-
+    if (id.includes("substation")) layerType = "substations";
+    else if (id.includes("tower")) layerType = "towers";
+    else if (id.includes("plant") || id.includes("powerplant")) layerType = "plants";
+    else if (id.includes("solar")) layerType = "solarSatellite";
+    else if (id.includes("wind")) layerType = "windSatellite";
     const coord = info.coordinate || [0, 0];
-    setSelectedFeature({
-      properties: props,
-      layerType,
-      lngLat: [coord[0], coord[1]],
-    });
+    setSelectedFeature({ properties: props, layerType, lngLat: [coord[0], coord[1]] });
   }, []);
 
-  // Keep MapLibre click handler for the base map (dismiss selection)
-  const handleMapClick = useCallback((_e: MapLayerMouseEvent) => {
-    // deck.gl handles picking; this only fires when clicking empty space
-  }, []);
-
-  // ── Compute combined bounding box of selected countries ─────────────
-  const selectedExtent = useMemo((): any => {
-    if (selectedCountries.length === 0) return undefined;
-    let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
-    for (const code of selectedCountries) {
-      const b = COUNTRY_BOUNDS[code];
-      if (!b) continue;
-      if (b[0] < minLng) minLng = b[0];
-      if (b[1] < minLat) minLat = b[1];
-      if (b[2] > maxLng) maxLng = b[2];
-      if (b[3] > maxLat) maxLat = b[3];
-    }
-    return [[minLng, minLat], [maxLng, maxLat]];
-  }, [selectedCountries]);
-
-  // ── Build deck.gl layers ─────────────────────────────────────────────
+  // Build deck.gl layers — simple GeoJsonLayer, GPU-rendered
   const deckLayers = useMemo(() => {
     const result: any[] = [];
-    // extent limits which tiles are loaded — no per-feature coordinate checks needed
-    const extent = selectedExtent;
 
-    // ── Lines layer ──────────────────────────────────────────────────────
-    if (layers.lines) {
-      result.push(
-        new MVTLayer({
-          id: "lines-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getLineColor: (f: Feature<Geometry>) => {
-            const p = (f.properties as any) || {};
-            const ln = p.layerName;
-            if (ln !== "lines" && ln !== "ro_lines") return [0, 0, 0, 0];
-            return voltageToColor(p.voltage);
-          },
-          getLineWidth: (f: Feature<Geometry>) => {
-            const p = (f.properties as any) || {};
-            const ln = p.layerName;
-            if (ln !== "lines" && ln !== "ro_lines") return 0;
-
-            return voltageToWidth(p.voltage);
-          },
-          lineWidthUnits: "pixels" as const,
-          lineWidthMinPixels: 1,
-          pickable: true,
-          stroked: false,
-          filled: false,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.lines && linesData) {
+      result.push(new GeoJsonLayer({
+        id: "lines",
+        data: linesData,
+        getLineColor: (f: any) => voltageToColor(f.properties?.voltage),
+        getLineWidth: (f: any) => voltageToWidth(f.properties?.voltage),
+        lineWidthUnits: "pixels" as const,
+        pickable: true,
+        onClick: handleDeckClick,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 80],
+      }));
     }
 
-    // ── Substations layers (source-layers: "substations", "ro_substations") ──
-    if (layers.substations) {
-      result.push(
-        new MVTLayer({
-          id: "substations-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "substations" && ln !== "ro_substations") return [0, 0, 0, 0];
-
-            return [245, 158, 11, 50]; // amber fill
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "substations" && ln !== "ro_substations") return [0, 0, 0, 0];
-
-            return [251, 191, 36, 220]; // amber outline
-          },
-          getLineWidth: 2,
-          lineWidthUnits: "pixels" as const,
-          getPointRadius: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "substations" && ln !== "ro_substations") return 0;
-
-            return 6;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 3,
-          pointRadiusMaxPixels: 12,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.substations && substationsData) {
+      result.push(new GeoJsonLayer({
+        id: "substations",
+        data: substationsData,
+        getFillColor: [245, 158, 11, 50],
+        getLineColor: [251, 191, 36, 180],
+        getLineWidth: 1.5,
+        lineWidthUnits: "pixels" as const,
+        getPointRadius: 5,
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 3,
+        pointRadiusMaxPixels: 12,
+        pickable: true,
+        onClick: handleDeckClick,
+        autoHighlight: true,
+        highlightColor: [251, 191, 36, 120],
+      }));
     }
 
-    // ── Towers (source-layer: "ro_towers") ────────────────────────────
-    if (layers.towers) {
-      result.push(
-        new MVTLayer({
-          id: "towers-main",
-          data: TILE_URL,
-          minZoom: 7,
-          maxZoom: 14,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "ro_towers") return [0, 0, 0, 0];
-
-            return [148, 163, 184, 200];
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "ro_towers") return [0, 0, 0, 0];
-
-            return [203, 213, 225, 100];
-          },
-          getPointRadius: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "ro_towers") return 0;
-
-            return 3;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 1,
-          pointRadiusMaxPixels: 8,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.towers && towersData) {
+      result.push(new GeoJsonLayer({
+        id: "towers",
+        data: towersData,
+        getFillColor: [148, 163, 184, 150],
+        getPointRadius: 2,
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 1,
+        pointRadiusMaxPixels: 5,
+        pickable: true,
+        onClick: handleDeckClick,
+      }));
     }
 
-    // ── Plants (source-layers: "plants", "ro_plants") ─────────────────
-    if (layers.plants) {
-      result.push(
-        new MVTLayer({
-          id: "plants-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "plants" && ln !== "ro_plants") return [0, 0, 0, 0];
-
-            return [34, 197, 94, 65]; // green fill
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "plants" && ln !== "ro_plants") return [0, 0, 0, 0];
-
-            return [74, 222, 128, 180]; // green outline
-          },
-          getLineWidth: 2,
-          lineWidthUnits: "pixels" as const,
-          getPointRadius: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "plants" && ln !== "ro_plants") return 0;
-
-            return 6;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 3,
-          pointRadiusMaxPixels: 14,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
-
-      // WRI Power Plants layer
-      result.push(
-        new MVTLayer({
-          id: "powerplants-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "powerplants") return [0, 0, 0, 0];
-
-            return fuelToColor((f.properties as any)?.fuel);
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "powerplants") return [0, 0, 0, 0];
-
-            return [255, 255, 255, 100] as [number, number, number, number];
-          },
-          getLineWidth: 1,
-          lineWidthUnits: "pixels" as const,
-          getPointRadius: (f: Feature<Geometry>) => {
-            const p = (f.properties as any) || {};
-            if (p.layerName !== "powerplants") return 0;
-
-            const mw = p.capacity_mw || 0;
-            if (mw >= 5000) return 14;
-            if (mw >= 1000) return 10;
-            if (mw >= 100) return 7;
-            return 4;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 2,
-          pointRadiusMaxPixels: 20,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.plants && plantsData) {
+      result.push(new GeoJsonLayer({
+        id: "plants",
+        data: plantsData,
+        getFillColor: [34, 197, 94, 180],
+        getLineColor: [74, 222, 128, 200],
+        getLineWidth: 1,
+        lineWidthUnits: "pixels" as const,
+        getPointRadius: 6,
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 3,
+        pointRadiusMaxPixels: 14,
+        pickable: true,
+        onClick: handleDeckClick,
+        autoHighlight: true,
+        highlightColor: [74, 222, 128, 120],
+      }));
     }
 
-    // ── Solar satellite parks (source-layer: "solar") ─────────────────
-    if (layers.solarSatellite) {
-      result.push(
-        new MVTLayer({
-          id: "solar-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "solar") return [0, 0, 0, 0];
-
-            return [251, 191, 36, 220];
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "solar") return [0, 0, 0, 0];
-
-            return [245, 158, 11, 180];
-          },
-          getPointRadius: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "solar") return 0;
-
-            return 6;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 3,
-          pointRadiusMaxPixels: 16,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.plants && powerplantsData) {
+      result.push(new GeoJsonLayer({
+        id: "powerplants",
+        data: powerplantsData,
+        getFillColor: (f: any) => fuelToColor(f.properties?.fuel),
+        getPointRadius: (f: any) => {
+          const mw = f.properties?.capacity_mw || 0;
+          if (mw >= 1000) return 12;
+          if (mw >= 100) return 8;
+          if (mw >= 10) return 5;
+          return 3;
+        },
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 2,
+        pointRadiusMaxPixels: 20,
+        getLineColor: [255, 255, 255, 80],
+        getLineWidth: 1,
+        lineWidthUnits: "pixels" as const,
+        pickable: true,
+        onClick: handleDeckClick,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 100],
+      }));
     }
 
-    // ── Wind turbines (source-layer: "wind") ──────────────────────────
-    if (layers.windSatellite) {
-      result.push(
-        new MVTLayer({
-          id: "wind-main",
-          data: TILE_URL,
-          minZoom: 0,
-          maxZoom: 14,
-          extent,
-          binary: false,
-          getFillColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "wind") return [0, 0, 0, 0];
+    if (layers.solarSatellite && solarData) {
+      result.push(new GeoJsonLayer({
+        id: "solar",
+        data: solarData,
+        getFillColor: [251, 191, 36, 200],
+        getPointRadius: 4,
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 2,
+        pointRadiusMaxPixels: 10,
+        getLineColor: [245, 158, 11, 180],
+        getLineWidth: 1.5,
+        lineWidthUnits: "pixels" as const,
+        pickable: true,
+        onClick: handleDeckClick,
+        autoHighlight: true,
+        highlightColor: [251, 191, 36, 120],
+      }));
+    }
 
-            return [34, 211, 238, 220];
-          },
-          getLineColor: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "wind") return [0, 0, 0, 0];
-
-            return [6, 182, 212, 180];
-          },
-          getPointRadius: (f: Feature<Geometry>) => {
-            const ln = (f.properties as any)?.layerName;
-            if (ln !== "wind") return 0;
-
-            return 5;
-          },
-          pointRadiusUnits: "pixels" as const,
-          pointRadiusMinPixels: 2,
-          pointRadiusMaxPixels: 14,
-          stroked: true,
-          filled: true,
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [255, 255, 255, 80],
-          onClick: handleDeckClick,
-        })
-      );
+    if (layers.windSatellite && windData) {
+      result.push(new GeoJsonLayer({
+        id: "wind",
+        data: windData,
+        getFillColor: [34, 211, 238, 200],
+        getPointRadius: 3,
+        pointRadiusUnits: "pixels" as const,
+        pointRadiusMinPixels: 1,
+        pointRadiusMaxPixels: 8,
+        pickable: true,
+        onClick: handleDeckClick,
+      }));
     }
 
     return result;
-  }, [
-    layers,
-    matchesVoltageFilter,
-    matchesSearch,
-    handleDeckClick,
-    selectedExtent,
-  ]);
+  }, [layers, linesData, substationsData, towersData, plantsData, powerplantsData, solarData, windData, handleDeckClick]);
 
   return (
     <div className="relative w-full h-full">
@@ -645,23 +314,19 @@ export default function MapView() {
         mapLib={maplibregl}
         mapStyle={MAP_STYLE}
         {...viewState}
-        onMove={(evt) => setViewState(evt.viewState)}
-        onClick={handleMapClick}
+        onMove={(e) => setViewState(e.viewState)}
         onMouseMove={(e) => setCursorPosition([e.lngLat.lng, e.lngLat.lat])}
-        onLoad={() => setIsLoading(false)}
         cursor="default"
         attributionControl={true}
         maxZoom={19}
-        minZoom={4}
+        minZoom={3}
+        onLoad={() => setIsLoading(false)}
       >
         <NavigationControl position="bottom-right" showCompass visualizePitch />
         <ScaleControl position="bottom-left" maxWidth={200} unit="metric" />
-
-        {/* deck.gl overlay renders all data layers via WebGL/GPU */}
         <DeckGLOverlay layers={deckLayers} />
       </MapGL>
 
-      {/* Search Bar */}
       <SearchBar
         onSearch={handleSearch}
         onFlyTo={(lng, lat, zoom) => {
@@ -670,7 +335,6 @@ export default function MapView() {
         mapRef={mapRef}
       />
 
-      {/* Sidebar */}
       <Sidebar
         layers={layers}
         onToggleLayer={handleToggleLayer}
@@ -678,11 +342,8 @@ export default function MapView() {
         voltageFilter={voltageFilter}
         onToggleVoltage={handleToggleVoltage}
         isLoading={isLoading}
-        selectedCountries={selectedCountries}
-        onToggleCountry={handleToggleCountry}
       />
 
-      {/* Info Panel */}
       <InfoPanel
         feature={selectedFeature}
         onClose={() => setSelectedFeature(null)}
@@ -691,7 +352,6 @@ export default function MapView() {
         }}
       />
 
-      {/* Chat Sidebar */}
       <ChatSidebar
         isOpen={chatOpen}
         onToggle={() => setChatOpen(!chatOpen)}
@@ -700,35 +360,41 @@ export default function MapView() {
         }}
       />
 
-      {/* Coordinate Bar */}
       {cursorPosition && !isLoading && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 bg-surface/80 backdrop-blur-md border border-border rounded-md">
-          <span className="text-[11px] font-mono text-muted">
+        <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", zIndex: 10, padding: "4px 12px", background: "rgba(13,13,18,0.8)", backdropFilter: "blur(8px)", border: "1px solid #27272a", borderRadius: 6 }}>
+          <span style={{ fontSize: 11, fontFamily: "monospace", color: "#71717a" }}>
             {cursorPosition[1].toFixed(5)}°N, {cursorPosition[0].toFixed(5)}°E
-            <span className="ml-3 text-zinc-600">Z{viewState.zoom.toFixed(1)}</span>
+            <span style={{ marginLeft: 12, color: "#3f3f46" }}>Z{viewState.zoom.toFixed(1)}</span>
           </span>
         </div>
       )}
 
-      {/* Loading Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative w-12 h-12">
-              <div className="absolute inset-0 rounded-full border-2 border-border" />
-              <div className="absolute inset-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-foreground">
-                Se incarca datele...
-              </p>
-              <p className="text-xs text-muted mt-1">
-                PowerGrid AI - Vizualizare retea
-              </p>
-            </div>
+        <div style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,10,15,0.8)", backdropFilter: "blur(4px)" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, border: "2px solid #27272a", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" }} />
+            <p style={{ fontSize: 14, fontWeight: 500, color: "#e4e4e7" }}>Se incarca datele...</p>
+            <p style={{ fontSize: 12, color: "#71717a", marginTop: 4 }}>PowerGrid AI</p>
           </div>
         </div>
       )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <button
+        onClick={() => setChatOpen(!chatOpen)}
+        style={{
+          position: "absolute", top: 12, right: 12, zIndex: 20,
+          width: 40, height: 40, borderRadius: 10,
+          background: chatOpen ? "rgba(59,130,246,0.2)" : "rgba(13,13,18,0.95)",
+          border: chatOpen ? "1px solid rgba(59,130,246,0.5)" : "1px solid #27272a",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(16px)", boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+        }}
+        title="Chat AI"
+      >
+        <span style={{ fontSize: 18 }}>💬</span>
+      </button>
     </div>
   );
 }
