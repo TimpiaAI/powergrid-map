@@ -80,6 +80,8 @@ export default function MapView() {
     towers: true,
     plants: true,
     projects: true,
+    solarSatellite: true,
+    windSatellite: true,
     heatmap: false,
   });
 
@@ -185,8 +187,10 @@ export default function MapView() {
       towers: towersData.features.length,
       plants: plantsData.features.length,
       projects: projectsData.features.length,
+      solarSatellite: solarData.features.length,
+      windSatellite: windData.features.length,
     }),
-    [linesData, substationsData, towersData, plantsData, projectsData]
+    [linesData, substationsData, towersData, plantsData, projectsData, solarData, windData]
   );
 
   // Build voltage filter expression for MapLibre (matches both V and kV)
@@ -317,8 +321,8 @@ export default function MapView() {
       "plants-fill": "plants",
       "plants-point": "plants",
       "projects-circle": "projects",
-      "solar-circle": "plants",
-      "wind-circle": "plants",
+      "solar-circle": "solarSatellite",
+      "wind-circle": "windSatellite",
     };
 
     setSelectedFeature({
@@ -479,18 +483,16 @@ export default function MapView() {
     () => ({
       id: "towers",
       type: "circle" as const,
-      minzoom: 11,
+      minzoom: 8,
       paint: {
         "circle-radius": [
           "interpolate",
           ["linear"],
           ["zoom"],
-          11,
-          1.5,
-          15,
-          4,
-          18,
-          6,
+          8, 0.5,
+          11, 1.5,
+          15, 4,
+          18, 6,
         ] as any,
         "circle-color": "#94a3b8",
         "circle-opacity": 0.7,
@@ -744,7 +746,9 @@ export default function MapView() {
       ids.push("substations-fill", "substations-outline", "substations-point");
     if (layers.towers) ids.push("towers");
     if (layers.plants) ids.push("plants-fill", "plants-point");
-    if (layers.projects) ids.push("projects-circle", "solar-circle", "wind-circle");
+    if (layers.projects) ids.push("projects-circle");
+    if (layers.solarSatellite) ids.push("solar-circle");
+    if (layers.windSatellite) ids.push("wind-circle");
     return ids;
   }, [layers]);
 
@@ -803,13 +807,13 @@ export default function MapView() {
 
         {/* Microsoft satellite-detected solar parks */}
         <Source id="solar" type="geojson" data={solarData}>
-          {layers.projects && <Layer {...solarCircleLayer} />}
-          {layers.projects && <Layer {...solarLabelLayer} />}
+          {layers.solarSatellite && <Layer {...solarCircleLayer} />}
+          {layers.solarSatellite && <Layer {...solarLabelLayer} />}
         </Source>
 
         {/* Microsoft satellite-detected wind turbines */}
         <Source id="wind" type="geojson" data={windData}>
-          {layers.projects && <Layer {...windCircleLayer} />}
+          {layers.windSatellite && <Layer {...windCircleLayer} />}
         </Source>
       </MapGL>
 

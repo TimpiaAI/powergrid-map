@@ -15,6 +15,9 @@ import {
   Flame,
   Map,
   Sun,
+  Wind,
+  Filter,
+  Database,
 } from "lucide-react";
 import {
   LayerVisibility,
@@ -40,8 +43,19 @@ const LAYER_ICONS: Record<string, React.ReactNode> = {
   towers: <Columns2 className="w-4 h-4" />,
   plants: <Flame className="w-4 h-4" />,
   projects: <Sun className="w-4 h-4" />,
+  solarSatellite: <Sun className="w-4 h-4" />,
+  windSatellite: <Wind className="w-4 h-4" />,
   heatmap: <Map className="w-4 h-4" />,
 };
+
+const PROJECT_TYPES = [
+  { key: "fotovoltaic", label: "Fotovoltaic", color: "#fbbf24" },
+  { key: "eolian", label: "Eolian", color: "#22d3ee" },
+  { key: "hidro", label: "Hidro", color: "#3b82f6" },
+  { key: "biomasa", label: "Biomasa", color: "#4ade80" },
+  { key: "stocare", label: "Stocare", color: "#c084fc" },
+  { key: "cogenerare", label: "Cogenerare", color: "#f97316" },
+];
 
 export default function Sidebar({
   layers,
@@ -52,6 +66,11 @@ export default function Sidebar({
   isLoading,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [projectTypeFilter, setProjectTypeFilter] = useState<Record<string, boolean>>(() => {
+    const filter: Record<string, boolean> = {};
+    PROJECT_TYPES.forEach((t) => { filter[t.key] = true; });
+    return filter;
+  });
   const voltageClasses = getVoltageClasses();
 
   if (collapsed) {
@@ -197,6 +216,8 @@ export default function Sidebar({
               <StatCard icon={<Columns2 style={{ width: 14, height: 14 }} />} label="Stalpi" value={stats.towers} />
               <StatCard icon={<Flame style={{ width: 14, height: 14 }} />} label="Centrale" value={stats.plants} />
               <StatCard icon={<Sun style={{ width: 14, height: 14 }} />} label="Proiecte" value={stats.projects} />
+              <StatCard icon={<Sun style={{ width: 14, height: 14, color: "#fbbf24" }} />} label="Solar (satelit)" value={stats.solarSatellite} />
+              <StatCard icon={<Wind style={{ width: 14, height: 14, color: "#22d3ee" }} />} label="Eolian (satelit)" value={stats.windSatellite} />
             </div>
           )}
         </div>
@@ -315,9 +336,102 @@ export default function Sidebar({
             </div>
           </div>
 
+          {/* Project Type Filter */}
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e1e24" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <Filter style={{ width: 14, height: 14, color: "#71717a" }} />
+              <h3
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "#71717a",
+                  textTransform: "uppercase" as const,
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Filtru tip
+              </h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
+              {PROJECT_TYPES.map(({ key, label, color }) => (
+                <button
+                  key={key}
+                  onClick={() =>
+                    setProjectTypeFilter((prev) => ({ ...prev, [key]: !prev[key] }))
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left" as const,
+                    background: "transparent",
+                    color: projectTypeFilter[key] ? "#e4e4e7" : "#3f3f46",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 3,
+                      border: projectTypeFilter[key] ? "none" : "1px solid #3f3f46",
+                      backgroundColor: projectTypeFilter[key] ? color : "transparent",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ flex: 1, fontSize: 12, fontWeight: 500 }}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Legend */}
-          <div style={{ padding: "12px 16px" }}>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e1e24" }}>
             <Legend />
+          </div>
+
+          {/* Data Sources */}
+          <div style={{ padding: "12px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <Database style={{ width: 14, height: 14, color: "#71717a" }} />
+              <h3
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "#71717a",
+                  textTransform: "uppercase" as const,
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Surse date
+              </h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+              <DataSourceRow
+                name="OSM"
+                detail="linii, statii, stalpi, centrale"
+                count={stats.lines + stats.substations + stats.towers + stats.plants}
+              />
+              <DataSourceRow
+                name="Transelectrica"
+                detail="ATR, contracte"
+                count={stats.projects}
+              />
+              <DataSourceRow
+                name="Microsoft GRW"
+                detail="solar, eolian satelit"
+                count={stats.solarSatellite + stats.windSatellite}
+              />
+              <DataSourceRow
+                name="GridKit"
+                detail="retea europeana"
+                count={0}
+              />
+            </div>
           </div>
         </div>
 
@@ -329,7 +443,7 @@ export default function Sidebar({
           }}
         >
           <p style={{ fontSize: 10, color: "#3f3f46", textAlign: "center" as const }}>
-            Date: OpenStreetMap &middot; Imagini: Esri
+            Date: OSM &middot; Transelectrica &middot; Microsoft GRW &middot; Esri
           </p>
         </div>
       </div>
@@ -370,6 +484,35 @@ function StatCard({
       >
         {value.toLocaleString("ro-RO")}
       </p>
+    </div>
+  );
+}
+
+function DataSourceRow({
+  name,
+  detail,
+  count,
+}: {
+  name: string;
+  detail: string;
+  count: number;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", flexDirection: "column" as const }}>
+        <span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 600 }}>{name}</span>
+        <span style={{ fontSize: 9, color: "#52525b" }}>{detail}</span>
+      </div>
+      <span
+        style={{
+          fontSize: 10,
+          color: count > 0 ? "#4ade80" : "#52525b",
+          fontFamily: "monospace",
+          fontWeight: 500,
+        }}
+      >
+        {count > 0 ? count.toLocaleString("ro-RO") : "-"}
+      </span>
     </div>
   );
 }

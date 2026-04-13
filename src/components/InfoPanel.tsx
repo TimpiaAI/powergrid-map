@@ -34,6 +34,9 @@ const PROPERTY_LABELS: Record<string, string> = {
   source: "Sursa",
   "plant:source": "Sursa centrala",
   "generator:source": "Sursa generator",
+  COUNTRY: "Tara",
+  construction_year: "An constructie",
+  area_ha: "Suprafata (ha)",
 };
 
 const LAYER_TYPE_LABELS: Record<string, string> = {
@@ -41,6 +44,9 @@ const LAYER_TYPE_LABELS: Record<string, string> = {
   substations: "Statie de transformare",
   towers: "Stalp",
   plants: "Centrala",
+  projects: "Proiect energie",
+  solarSatellite: "Parc solar (satelit)",
+  windSatellite: "Turbina eoliana (satelit)",
   heatmap: "Zona de interes",
 };
 
@@ -64,7 +70,14 @@ export default function InfoPanel({ feature, onClose }: InfoPanelProps) {
   const { properties, layerType } = feature;
   const voltageColor = getVoltageColor(properties.voltage as string);
 
-  const displayProperties = Object.entries(properties).filter(
+  const isSatellite = layerType === "solarSatellite" || layerType === "windSatellite";
+
+  const enrichedProperties = { ...properties };
+  if (isSatellite && !enrichedProperties.source) {
+    enrichedProperties.source = "Microsoft Global Renewables Watch";
+  }
+
+  const displayProperties = Object.entries(enrichedProperties).filter(
     ([key, value]) =>
       value !== null &&
       value !== undefined &&

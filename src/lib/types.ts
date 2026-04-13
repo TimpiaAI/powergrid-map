@@ -39,6 +39,8 @@ export type LayerType =
   | "towers"
   | "plants"
   | "projects"
+  | "solarSatellite"
+  | "windSatellite"
   | "heatmap";
 
 export interface LayerVisibility {
@@ -47,6 +49,8 @@ export interface LayerVisibility {
   towers: boolean;
   plants: boolean;
   projects: boolean;
+  solarSatellite: boolean;
+  windSatellite: boolean;
   heatmap: boolean;
 }
 
@@ -56,6 +60,8 @@ export interface DataStats {
   towers: number;
   plants: number;
   projects: number;
+  solarSatellite: number;
+  windSatellite: number;
 }
 
 export interface SelectedFeature {
@@ -90,5 +96,7 @@ export const LAYER_LABELS: Record<LayerType, string> = {
   towers: "Stalpi",
   plants: "Centrale (OSM)",
   projects: "Proiecte energie",
+  solarSatellite: "Parcuri solare (satelit)",
+  windSatellite: "Turbine eoliene (satelit)",
   heatmap: "Harta termica",
 };
