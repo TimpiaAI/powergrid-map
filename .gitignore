@@ -50,3 +50,5 @@ public/data/gridkit_*.geojson
 
 # Large PMTiles (use Git LFS or host separately)
 *.pmtiles
+public/data/.next/
+public/data/tsconfig.json
