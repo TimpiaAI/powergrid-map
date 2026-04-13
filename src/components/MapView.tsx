@@ -111,6 +111,8 @@ export default function MapView() {
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
   const [windData, setWindData] =
     useState<PowerFeatureCollection>(EMPTY_GEOJSON);
+  const [powerplantsData, setPowerplantsData] =
+    useState<PowerFeatureCollection>(EMPTY_GEOJSON);
 
   const [isLoading, setIsLoading] = useState(true);
   const [cursorPosition, setCursorPosition] = useState<[number, number] | null>(null);
@@ -129,6 +131,7 @@ export default function MapView() {
         { name: "romania_projects.geojson", setter: setProjectsData },
         { name: "europe_solar.geojson", setter: setSolarData },
         { name: "europe_wind.geojson", setter: setWindData },
+        { name: "europe_powerplants.geojson", setter: setPowerplantsData },
       ];
 
       await Promise.allSettled(
@@ -328,6 +331,7 @@ export default function MapView() {
       "plants-point": "plants",
       "plants-centroid": "plants",
       "plants-outline": "plants",
+      "powerplants-circle": "plants",
       "projects-circle": "projects",
       "solar-circle": "solarSatellite",
       "wind-circle": "windSatellite",
@@ -771,6 +775,78 @@ export default function MapView() {
     []
   );
 
+  // WRI Power Plants — all types, color by fuel
+  const powerplantsCircleLayer: LayerProps = useMemo(
+    () => ({
+      id: "powerplants-circle",
+      type: "circle" as const,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          4, ["interpolate", ["linear"], ["get", "capacity_mw"], 0, 2, 100, 4, 1000, 7, 5000, 12] as any,
+          10, ["interpolate", ["linear"], ["get", "capacity_mw"], 0, 4, 100, 7, 1000, 12, 5000, 18] as any,
+        ] as any,
+        "circle-color": [
+          "match", ["get", "fuel"],
+          "solar", "#fbbf24",
+          "eolian", "#22d3ee",
+          "hidro", "#3b82f6",
+          "nuclear", "#f43f5e",
+          "carbune", "#78716c",
+          "gaz", "#f97316",
+          "petrol", "#a16207",
+          "biomasa", "#4ade80",
+          "deseuri", "#a3a3a3",
+          "geotermal", "#e879f9",
+          "cogenerare", "#fb923c",
+          "stocare", "#c084fc",
+          "#71717a",
+        ] as any,
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": [
+          "interpolate", ["linear"], ["get", "capacity_mw"],
+          0, 0.5, 100, 1, 1000, 1.5,
+        ] as any,
+        "circle-stroke-opacity": 0.4,
+      },
+    }),
+    []
+  );
+
+  const powerplantsLabelLayer: LayerProps = useMemo(
+    () => ({
+      id: "powerplants-label",
+      type: "symbol" as const,
+      minzoom: 8,
+      filter: [">", ["get", "capacity_mw"], 50] as any,
+      layout: {
+        "text-field": [
+          "concat",
+          ["get", "name"],
+          "\n",
+          ["to-string", ["round", ["get", "capacity_mw"]]],
+          " MW",
+        ] as any,
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          8, 9, 12, 11,
+        ] as any,
+        "text-offset": [0, 1.8] as [number, number],
+        "text-anchor": "top" as const,
+        "text-max-width": 12,
+        "text-font": ["Open Sans Regular"],
+      },
+      paint: {
+        "text-color": "#e4e4e7",
+        "text-halo-color": "rgba(0, 0, 0, 0.9)",
+        "text-halo-width": 1.5,
+        "text-opacity": 0.85,
+      },
+    }),
+    []
+  );
+
   // Projects layer — color by status
   const projectsCircleLayer: LayerProps = useMemo(
     () => ({
@@ -840,7 +916,7 @@ export default function MapView() {
     if (layers.substations)
       ids.push("substations-fill", "substations-outline", "substations-point");
     if (layers.towers) ids.push("towers");
-    if (layers.plants) ids.push("plants-fill", "plants-point", "plants-centroid");
+    if (layers.plants) ids.push("plants-fill", "plants-point", "plants-centroid", "powerplants-circle");
     if (layers.projects) ids.push("projects-circle");
     if (layers.solarSatellite) ids.push("solar-circle");
     if (layers.windSatellite) ids.push("wind-circle");
@@ -912,6 +988,12 @@ export default function MapView() {
         {/* Microsoft satellite-detected wind turbines */}
         <Source id="wind" type="geojson" data={windData}>
           {layers.windSatellite && <Layer {...windCircleLayer} />}
+        </Source>
+
+        {/* WRI Power Plants (all types: thermal, hydro, nuclear, gas, etc.) */}
+        <Source id="powerplants" type="geojson" data={powerplantsData}>
+          {layers.plants && <Layer {...powerplantsCircleLayer} />}
+          {layers.plants && <Layer {...powerplantsLabelLayer} />}
         </Source>
       </MapGL>
 
