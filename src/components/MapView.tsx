@@ -293,7 +293,7 @@ export default function MapView() {
     () => ({
       id: "lines-hv-glow",
       type: "line" as const,
-      "source-layer": "lines_hv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
@@ -321,7 +321,7 @@ export default function MapView() {
     () => ({
       id: "lines-hv",
       type: "line" as const,
-      "source-layer": "lines_hv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
@@ -342,7 +342,7 @@ export default function MapView() {
     () => ({
       id: "lines-mv-glow",
       type: "line" as const,
-      "source-layer": "lines_mv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
@@ -370,7 +370,7 @@ export default function MapView() {
     () => ({
       id: "lines-mv",
       type: "line" as const,
-      "source-layer": "lines_mv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
@@ -391,7 +391,7 @@ export default function MapView() {
     () => ({
       id: "lines-lv-glow",
       type: "line" as const,
-      "source-layer": "lines_lv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
@@ -419,7 +419,7 @@ export default function MapView() {
     () => ({
       id: "lines-lv",
       type: "line" as const,
-      "source-layer": "lines_lv",
+      "source-layer": "lines",
       ...(combinedFilter ? { filter: combinedFilter as any } : {}),
       layout: {
         "line-join": "round",
